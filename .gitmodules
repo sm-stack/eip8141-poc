@@ -1,0 +1,6 @@
+[submodule "8141-geth"]
+	path = 8141-geth
+	url = https://github.com/sm-stack/8141-geth
+[submodule "solidity-eip8141"]
+	path = solidity-eip8141
+	url = https://github.com/sm-stack/solidity-eip8141

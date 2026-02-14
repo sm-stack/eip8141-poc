@@ -1,0 +1,24 @@
+# Build artifacts
+/build/
+
+# Foundry
+/contracts/out/
+/contracts/cache/
+/contracts/broadcast/
+
+# Dependencies
+/contracts/lib/
+/contracts/node_modules/
+
+# Lockfiles
+/contracts/bun.lockb
+/contracts/package-lock.json
+
+# Environment
+.env
+
+# OS
+.DS_Store
+
+# Context
+.context/
