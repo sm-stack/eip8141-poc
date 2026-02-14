@@ -1,5 +1,5 @@
 .PHONY: build build-geth build-solc submodules clean \
-       contracts test devnet send-frame-tx send-kernel-tx
+       contracts test devnet send-frame-tx send-kernel-tx send-hooked-tx
 
 BUILD_DIR := $(CURDIR)/build
 GETH_BIN := $(BUILD_DIR)/bin/geth
@@ -39,6 +39,9 @@ send-frame-tx:
 
 send-kernel-tx:
 	cd contracts && npx tsx script/send_kernel_tx.ts
+
+send-hooked-tx:
+	cd contracts && npx tsx script/send_hooked_tx.ts
 
 clean:
 	rm -rf $(BUILD_DIR)
