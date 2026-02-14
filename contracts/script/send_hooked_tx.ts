@@ -146,10 +146,12 @@ async function deployContract(
   });
 
   const receipt = await waitForReceipt(publicClient, hash);
+  console.log(`  Deploy tx: ${hash}, expected address: ${expectedAddr}`);
   if (receipt.status !== "0x1") {
-    throw new Error(`Deploy failed: status=${receipt.status}`);
+    console.log(`  Receipt:`, JSON.stringify(receipt, null, 2));
+    throw new Error(`Deploy failed: status=${receipt.status}, tx=${hash}`);
   }
-  console.log(`  Deployed at ${expectedAddr} (tx: ${hash})`);
+  console.log(`  ✓ Deployed successfully`);
   return { hash, address: expectedAddr };
 }
 
@@ -321,7 +323,7 @@ async function main() {
     [validatorAddr, encodeAbiParameters(parseAbiParameters("address"), [ownerAddr])]
   );
   const kernelDeployData = (kernelBytecode + constructorArgs.slice(2)) as Hex;
-  const { address: kernelAddr } = await deployContract(walletClient, publicClient, kernelDeployData);
+  const { address: kernelAddr } = await deployContract(walletClient, publicClient, kernelDeployData, 6_000_000n);
 
   console.log("\n3. Deploying SpendingLimitHook...");
   const hookBytecode = loadBytecode("SpendingLimitHook");
@@ -476,11 +478,12 @@ async function main() {
   printReceipt(receipt2);
 
   // Verify that frame 1 (SENDER) failed due to spending limit
-  if (receipt2.status === "0x1") {
-    throw new Error("Second transfer should fail but succeeded - hook not enforced!");
+  // Note: Overall tx status is 0x1 (success) in EIP-8141 even if individual frames fail
+  if (!receipt2.frameReceipts || receipt2.frameReceipts.length < 2) {
+    throw new Error("Missing frame receipts");
   }
-  if (receipt2.frameReceipts && receipt2.frameReceipts[1].status !== "0x0") {
-    throw new Error(`Frame 1 should fail (0x0) but got ${receipt2.frameReceipts[1].status}`);
+  if (receipt2.frameReceipts[1].status !== "0x0") {
+    throw new Error(`Frame 1 should fail (0x0) but got ${receipt2.frameReceipts[1].status} - hook not enforced!`);
   }
 
   console.log("  ✓ Transfer correctly rejected by SpendingLimitHook (6 ETH > 5 ETH limit)");

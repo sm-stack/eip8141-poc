@@ -255,7 +255,7 @@ async function main() {
     [validatorAddr, encodeAbiParameters(parseAbiParameters("address"), [ownerAddr])]
   );
   const kernelDeployData = (kernelBytecode + constructorArgs.slice(2)) as Hex;
-  const { address: kernelAddr } = await deployContract(walletClient, publicClient, kernelDeployData);
+  const { address: kernelAddr } = await deployContract(walletClient, publicClient, kernelDeployData, 6_000_000n);
 
   // 3. Fund Kernel with 10 ETH
   console.log("\n3. Funding Kernel with 10 ETH...");
