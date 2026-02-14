@@ -139,4 +139,11 @@ library FrameTxLib {
     function frameMode(uint256 frameIndex) internal pure returns (uint8) {
         return uint8(uint256(txParamLoad(PARAM_FRAME_MODE, frameIndex, 0)));
     }
+
+    /// @notice Get the mode of the currently executing frame.
+    /// @dev Convenience wrapper for frameMode(currentFrameIndex()).
+    ///      Returns 0 (DEFAULT), 1 (VERIFY), or 2 (SENDER).
+    function currentFrameMode() internal pure returns (uint8) {
+        return frameMode(currentFrameIndex());
+    }
 }
