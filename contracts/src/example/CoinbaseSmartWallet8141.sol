@@ -73,23 +73,19 @@ contract CoinbaseSmartWallet8141 {
     /// @param signature SignatureWrapper containing ownerIndex and signature data
     /// @param scope Validation scope (unused in this implementation)
     function validate(bytes calldata signature, uint8 scope) external {
-        // Must be called in VERIFY frame
         if (FrameTxLib.currentFrameMode() != FRAME_MODE_VERIFY) {
             revert InvalidFrameMode();
         }
 
-        // Decode signature wrapper
-        SignatureWrapper memory sigWrapper = abi.decode(signature, (SignatureWrapper));
+        // Decode as tuple instead of struct to avoid compiler struct decode issue
+        (uint256 ownerIndex, bytes memory signatureData) = abi.decode(signature, (uint256, bytes));
 
-        // Get signature hash
         bytes32 sigHash = FrameTxLib.sigHash();
 
-        // Validate signature
-        if (!_validateSignature(sigWrapper.ownerIndex, sigHash, sigWrapper.signatureData)) {
+        if (!_validateSignature(ownerIndex, sigHash, signatureData)) {
             revert Unauthorized();
         }
 
-        // Approve both execution and payment
         FrameTxLib.approveEmpty(FrameTxLib.SCOPE_BOTH);
     }
 
@@ -336,7 +332,18 @@ contract CoinbaseSmartWallet8141 {
         }
 
         // Decode WebAuthn authentication data from signature
-        WebAuthn.WebAuthnAuth memory webAuthnAuth = abi.decode(signatureData, (WebAuthn.WebAuthnAuth));
+        // Use tuple decode instead of struct decode to avoid compiler struct decode issue
+        (
+            bytes memory authenticatorData,
+            bytes memory clientDataJSON,
+            uint256 challengeIndex,
+            uint256 typeIndex,
+            uint256 rVal,
+            uint256 sVal
+        ) = abi.decode(signatureData, (bytes, bytes, uint256, uint256, uint256, uint256));
+        WebAuthn.WebAuthnAuth memory webAuthnAuth = WebAuthn.WebAuthnAuth(
+            authenticatorData, clientDataJSON, challengeIndex, typeIndex, rVal, sVal
+        );
 
         // Verify WebAuthn signature
         // Challenge is the sigHash (32 bytes)
