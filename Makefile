@@ -1,5 +1,6 @@
 .PHONY: build build-geth build-solc submodules clean \
-       contracts test devnet send-frame-tx send-kernel-tx send-hooked-tx
+       contracts test devnet devnet-stop \
+       e2e e2e-simple e2e-kernel e2e-kernel-validator e2e-hooked e2e-coinbase-ecdsa e2e-coinbase-webauthn
 
 BUILD_DIR := $(CURDIR)/build
 GETH_BIN := $(BUILD_DIR)/bin/geth
@@ -34,14 +35,30 @@ test:
 devnet:
 	bash devnet/run.sh
 
-send-frame-tx:
-	cd contracts && npx tsx script/send_frame_tx.ts
+devnet-stop:
+	@pkill -f 'geth.*--dev' 2>/dev/null && echo "devnet stopped" || echo "devnet not running"
 
-send-kernel-tx:
-	cd contracts && npx tsx script/send_kernel_tx.ts
+# E2E tests (require devnet running)
+e2e-simple:
+	cd contracts && npx tsx e2e/simple/simple-basic.ts
 
-send-hooked-tx:
-	cd contracts && npx tsx script/send_hooked_tx.ts
+e2e-kernel:
+	cd contracts && npx tsx e2e/kernel/kernel-basic.ts
+
+e2e-kernel-validator:
+	cd contracts && npx tsx e2e/kernel/kernel-validator.ts
+
+e2e-hooked:
+	cd contracts && npx tsx e2e/kernel-hooked/spending-limit.ts
+
+e2e-coinbase-ecdsa:
+	cd contracts && npx tsx e2e/coinbase/coinbase-ecdsa.ts
+
+e2e-coinbase-webauthn:
+	cd contracts && npx tsx e2e/coinbase/coinbase-webauthn.ts
+
+e2e:
+	cd contracts && npx tsx e2e/run-all.ts
 
 clean:
 	rm -rf $(BUILD_DIR)

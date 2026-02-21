@@ -1,0 +1,3 @@
+// Simple8141Account uses an older validate ABI: validate(uint8 v, bytes32 r, bytes32 s, uint8 scope)
+// Selector: 0xf2d64fed
+export const SIMPLE_VALIDATE_SELECTOR = "0xf2d64fed";

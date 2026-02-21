@@ -6,11 +6,12 @@
     "send-frame-tx": "tsx script/send_frame_tx.ts"
   },
   "devDependencies": {
+    "@types/node": "^25.3.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "viem": "^2.0.0",
-    "@noble/curves": "^1.4.0"
+    "@noble/curves": "^1.4.0",
+    "viem": "^2.0.0"
   }
 }
