@@ -39,7 +39,7 @@ import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/fr
 import { signFrameHash } from "../helpers/signing.js";
 import { verifyReceipt } from "../helpers/receipt.js";
 import { kernelAbi, factoryAbi } from "../helpers/abis/kernel.js";
-import { walletAbi } from "../helpers/abis/coinbase.js";
+import { walletAbi, factoryAbi as coinbaseFactoryAbi } from "../helpers/abis/coinbase.js";
 import { SIMPLE_VALIDATE_SELECTOR, simpleAccountAbi } from "../helpers/abis/simple.js";
 import { benchmarkTokenAbi } from "../helpers/abis/benchmark-token.js";
 import { banner, sectionHeader, info, step, success, fatal } from "../helpers/log.js";
@@ -244,16 +244,48 @@ async function sendKernelFrameTx(kernelAddr: Address, senderCalldata: Hex): Prom
 // ─── CoinbaseSmartWallet8141 ────────────────────────────────
 
 async function deployCoinbase(): Promise<Address> {
-  const bytecode = loadBytecode("CoinbaseSmartWallet8141");
+  // Deploy implementation
+  const implBytecode = loadBytecode("CoinbaseSmartWallet8141");
+  const { address: implAddr } = await deployContract(
+    walletClient, publicClient, implBytecode, 5_000_000n, "CoinbaseSmartWallet8141 (impl)"
+  );
+
+  // Deploy factory
+  const factoryBytecode = loadBytecode("CoinbaseSmartWalletFactory8141");
+  const factoryCtorArgs = encodeAbiParameters(parseAbiParameters("address"), [implAddr]);
+  const factoryDeployData = (factoryBytecode + factoryCtorArgs.slice(2)) as Hex;
+  const { address: factoryAddr } = await deployContract(
+    walletClient, publicClient, factoryDeployData, 3_000_000n, "CoinbaseSmartWalletFactory8141"
+  );
+
+  // Create account via factory
   const owners = [
     encodeAbiParameters(parseAbiParameters("address"), [devAddr]),
   ];
-  const constructorArgs = encodeAbiParameters(parseAbiParameters("bytes[]"), [owners]);
-  const deployData = (bytecode + constructorArgs.slice(2)) as Hex;
-  const { address } = await deployContract(
-    walletClient, publicClient, deployData, 5_000_000n, "CoinbaseSmartWallet8141"
-  );
-  return address;
+  const createHash = await walletClient.sendTransaction({
+    chain: CHAIN_DEF,
+    to: factoryAddr,
+    data: encodeFunctionData({
+      abi: coinbaseFactoryAbi,
+      functionName: "createAccount",
+      args: [owners, 0n],
+    }),
+    gas: 5_000_000n,
+    maxFeePerGas: 10_000_000_000n,
+    maxPriorityFeePerGas: 1_000_000_000n,
+  } as any);
+  const receipt = await waitForReceipt(publicClient, createHash);
+  if (receipt.status !== "0x1") throw new Error("Coinbase factory createAccount failed");
+
+  // Get deterministic address
+  const walletAddr = await (publicClient as any).readContract({
+    address: factoryAddr,
+    abi: coinbaseFactoryAbi,
+    functionName: "getAddress",
+    args: [owners, 0n],
+  }) as Address;
+
+  return walletAddr;
 }
 
 async function sendCoinbaseFrameTx(walletAddr: Address, senderCalldata: Hex): Promise<any> {
