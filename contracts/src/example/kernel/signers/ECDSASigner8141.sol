@@ -2,8 +2,8 @@
 pragma solidity ^0.8.28;
 
 import {ECDSA} from "solady/utils/ECDSA.sol";
-import {ISigner8141} from "../../interfaces/ISigner8141.sol";
-import {MODULE_TYPE_SIGNER, ERC1271_MAGICVALUE, ERC1271_INVALID} from "../../types/Constants8141.sol";
+import {ISigner8141} from "../interfaces/ISigner8141.sol";
+import {MODULE_TYPE_SIGNER, ERC1271_MAGICVALUE, ERC1271_INVALID} from "../types/Constants8141.sol";
 
 /// @title ECDSASigner8141
 /// @notice ECDSA signer for the Kernel8141 permission system.

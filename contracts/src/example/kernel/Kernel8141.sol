@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {FrameTxLib} from "../FrameTxLib.sol";
-import {ValidationManager8141} from "../core/ValidationManager8141.sol";
+import {FrameTxLib} from "../../FrameTxLib.sol";
+import {ValidationManager8141} from "./core/ValidationManager8141.sol";
 import {
     ValidationId,
     ValidationMode,
@@ -15,19 +15,19 @@ import {
     ExecType,
     ExecModeSelector,
     ExecModePayload
-} from "../types/Types8141.sol";
-import {IValidator8141} from "../interfaces/IValidator8141.sol";
-import {IHook8141} from "../interfaces/IHook8141.sol";
-import {IModule8141} from "../interfaces/IModule8141.sol";
-import {IERC7579Account8141} from "../interfaces/IERC7579Account8141.sol";
-import {ValidatorLib8141} from "../utils/ValidatorLib8141.sol";
-import {ExecLib8141} from "../utils/ExecLib8141.sol";
-import {ModuleLib8141} from "../utils/ModuleLib8141.sol";
+} from "./types/Types8141.sol";
+import {IValidator8141} from "./interfaces/IValidator8141.sol";
+import {IHook8141} from "./interfaces/IHook8141.sol";
+import {IModule8141} from "./interfaces/IModule8141.sol";
+import {IERC7579Account8141} from "./interfaces/IERC7579Account8141.sol";
+import {ValidatorLib8141} from "./utils/ValidatorLib8141.sol";
+import {ExecLib8141} from "./utils/ExecLib8141.sol";
+import {ModuleLib8141} from "./utils/ModuleLib8141.sol";
 import {
     InstallValidatorDataFormat,
     InstallExecutorDataFormat,
     InstallFallbackDataFormat
-} from "../types/Structs8141.sol";
+} from "./types/Structs8141.sol";
 import {
     VALIDATION_MODE_DEFAULT,
     VALIDATION_MODE_ENABLE,
@@ -53,7 +53,7 @@ import {
     EXEC_MODE_DEFAULT,
     ERC1271_MAGICVALUE,
     ERC1271_INVALID
-} from "../types/Constants8141.sol";
+} from "./types/Constants8141.sol";
 
 /// @title Kernel8141
 /// @notice Modular EIP-8141 smart account with Kernel v3 feature parity.

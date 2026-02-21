@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IHook8141} from "../../interfaces/IHook8141.sol";
+import {IHook8141} from "../interfaces/IHook8141.sol";
 import {SessionKeyValidator} from "../validators/SessionKeyValidator.sol";
-import {MODULE_TYPE_HOOK} from "../../types/Constants8141.sol";
+import {MODULE_TYPE_HOOK} from "../types/Constants8141.sol";
 
 /// @title SessionKeyPermissionHook
 /// @notice Unified hook that enforces session key permissions (spending, selectors, targets).

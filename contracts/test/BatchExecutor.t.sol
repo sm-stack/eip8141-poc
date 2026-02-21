@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
-import {BatchExecutor} from "../src/example/executors/BatchExecutor.sol";
+import {BatchExecutor} from "../src/example/kernel/executors/BatchExecutor.sol";
 
 contract BatchExecutorTest is Test {
     BatchExecutor executor;

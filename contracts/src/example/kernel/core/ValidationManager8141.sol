@@ -16,7 +16,7 @@ import {EIP712} from "solady/utils/EIP712.sol";
 import {ModuleLib8141} from "../utils/ModuleLib8141.sol";
 import {ValidatorLib8141} from "../utils/ValidatorLib8141.sol";
 import {_intersectValidationData} from "../utils/ValidationResult8141.sol";
-import {FrameTxLib} from "../FrameTxLib.sol";
+import {FrameTxLib} from "../../../FrameTxLib.sol";
 
 import {
     ValidationId,

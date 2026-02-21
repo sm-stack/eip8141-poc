@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
-import {SpendingLimitHook} from "../src/example/hooks/SpendingLimitHook.sol";
+import {SpendingLimitHook} from "../src/example/kernel/hooks/SpendingLimitHook.sol";
 
 contract SpendingLimitHookTest is Test {
     SpendingLimitHook hook;

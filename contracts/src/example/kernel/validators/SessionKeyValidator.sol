@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IValidator8141} from "../../interfaces/IValidator8141.sol";
-import {MODULE_TYPE_VALIDATOR, ERC1271_INVALID} from "../../types/Constants8141.sol";
+import {IValidator8141} from "../interfaces/IValidator8141.sol";
+import {MODULE_TYPE_VALIDATOR, ERC1271_INVALID} from "../types/Constants8141.sol";
 
 /// @title SessionKeyValidator
 /// @notice Validator for time-bounded, permission-restricted session keys.

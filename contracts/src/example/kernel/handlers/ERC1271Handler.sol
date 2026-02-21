@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IFallbackHandler} from "../../interfaces/IFallbackHandler.sol";
-import {IValidator8141} from "../../interfaces/IValidator8141.sol";
+import {IFallbackHandler} from "../../../interfaces/IFallbackHandler.sol";
+import {IValidator8141} from "../interfaces/IValidator8141.sol";
 
 /// @title ERC1271Handler
 /// @notice Fallback handler for ERC-1271 signature validation.

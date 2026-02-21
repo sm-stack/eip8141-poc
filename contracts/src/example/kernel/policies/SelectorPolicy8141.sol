@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IPolicy8141} from "../../interfaces/IPolicy8141.sol";
-import {FrameTxLib} from "../../FrameTxLib.sol";
-import {MODULE_TYPE_POLICY} from "../../types/Constants8141.sol";
+import {IPolicy8141} from "../interfaces/IPolicy8141.sol";
+import {FrameTxLib} from "../../../FrameTxLib.sol";
+import {MODULE_TYPE_POLICY} from "../types/Constants8141.sol";
 
 /// @title SelectorPolicy8141
 /// @notice Permission policy that restricts allowed function selectors.

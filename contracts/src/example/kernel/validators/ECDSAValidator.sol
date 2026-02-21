@@ -2,14 +2,14 @@
 pragma solidity ^0.8.28;
 
 import {ECDSA} from "solady/utils/ECDSA.sol";
-import {IValidator8141} from "../../interfaces/IValidator8141.sol";
-import {IHook8141} from "../../interfaces/IHook8141.sol";
+import {IValidator8141} from "../interfaces/IValidator8141.sol";
+import {IHook8141} from "../interfaces/IHook8141.sol";
 import {
     MODULE_TYPE_VALIDATOR,
     MODULE_TYPE_HOOK,
     ERC1271_MAGICVALUE,
     ERC1271_INVALID
-} from "../../types/Constants8141.sol";
+} from "../types/Constants8141.sol";
 
 /// @title ECDSAValidator
 /// @notice ECDSA signature validator + hook gate for Kernel8141 (Kernel v3 compatible).

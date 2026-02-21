@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
-import {DefaultExecutor} from "../src/example/executors/DefaultExecutor.sol";
+import {DefaultExecutor} from "../src/example/kernel/executors/DefaultExecutor.sol";
 
 contract DefaultExecutorTest is Test {
     DefaultExecutor executor;
