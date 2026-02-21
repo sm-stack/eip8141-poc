@@ -2,7 +2,7 @@
  * EIP-8141 Gas Benchmark
  *
  * Measures gas costs for ETH transfer and ERC20 transfer across
- * Simple8141Account, Kernel8141, and CoinbaseSmartWallet8141.
+ * Simple8141Account, Kernel8141, CoinbaseSmartWallet8141, and LightAccount8141.
  *
  * Usage: cd contracts && npx tsx e2e/benchmark/gas-benchmark.ts
  */
@@ -40,6 +40,7 @@ import { signFrameHash } from "../helpers/signing.js";
 import { verifyReceipt } from "../helpers/receipt.js";
 import { kernelAbi, factoryAbi } from "../helpers/abis/kernel.js";
 import { walletAbi, factoryAbi as coinbaseFactoryAbi } from "../helpers/abis/coinbase.js";
+import { walletAbi as lightWalletAbi, factoryAbi as lightFactoryAbi } from "../helpers/abis/light-account.js";
 import { SIMPLE_VALIDATE_SELECTOR, simpleAccountAbi } from "../helpers/abis/simple.js";
 import { benchmarkTokenAbi } from "../helpers/abis/benchmark-token.js";
 import { banner, sectionHeader, info, step, success, fatal } from "../helpers/log.js";
@@ -330,6 +331,89 @@ async function sendCoinbaseFrameTx(walletAddr: Address, senderCalldata: Hex): Pr
   return await waitForReceipt(publicClient, txHash);
 }
 
+// ─── LightAccount8141 ───────────────────────────────────────
+
+async function deployLightAccount(): Promise<Address> {
+  const implBytecode = loadBytecode("LightAccount8141");
+  const { address: implAddr } = await deployContract(
+    walletClient, publicClient, implBytecode, 5_000_000n, "LightAccount8141 (impl)"
+  );
+
+  const factoryBytecode = loadBytecode("LightAccountFactory8141");
+  const factoryCtorArgs = encodeAbiParameters(parseAbiParameters("address"), [implAddr]);
+  const factoryDeployData = (factoryBytecode + factoryCtorArgs.slice(2)) as Hex;
+  const { address: factoryAddr } = await deployContract(
+    walletClient, publicClient, factoryDeployData, 3_000_000n, "LightAccountFactory8141"
+  );
+
+  const createHash = await walletClient.sendTransaction({
+    chain: CHAIN_DEF,
+    to: factoryAddr,
+    data: encodeFunctionData({
+      abi: lightFactoryAbi,
+      functionName: "createAccount",
+      args: [devAddr, 0n],
+    }),
+    gas: 5_000_000n,
+    maxFeePerGas: 10_000_000_000n,
+    maxPriorityFeePerGas: 1_000_000_000n,
+  } as any);
+  const receipt = await waitForReceipt(publicClient, createHash);
+  if (receipt.status !== "0x1") throw new Error("LightAccount factory createAccount failed");
+
+  const walletAddr = await (publicClient as any).readContract({
+    address: factoryAddr,
+    abi: lightFactoryAbi,
+    functionName: "getAddress",
+    args: [devAddr, 0n],
+  }) as Address;
+
+  return walletAddr;
+}
+
+async function sendLightAccountFrameTx(walletAddr: Address, senderCalldata: Hex): Promise<any> {
+  const { nonce, gasFeeCap } = await getFrameTxBase(walletAddr);
+  const frameTxParams: FrameTxParams = {
+    chainId: BigInt(CHAIN_ID),
+    nonce,
+    sender: walletAddr,
+    gasTipCap: 1_000_000_000n,
+    gasFeeCap,
+    frames: [
+      { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 300_000n, data: new Uint8Array(0) },
+      { mode: FRAME_MODE_SENDER, target: null, gasLimit: 500_000n, data: hexToBytes(senderCalldata) },
+    ],
+    blobFeeCap: 0n,
+    blobHashes: [],
+  };
+
+  const sigHash = computeSigHash(frameTxParams);
+  const sig = secp256k1.sign(sigHash.slice(2), DEV_KEY.slice(2));
+  const rHex = sig.r.toString(16).padStart(64, "0");
+  const sHex = sig.s.toString(16).padStart(64, "0");
+  const v = sig.recovery;
+  const ecdsaSig = hexToBytes(("0x" + rHex + sHex + v.toString(16).padStart(2, "0")) as Hex);
+
+  // [0x00 (EOA type)] + [65-byte ECDSA sig]
+  const typedSig = new Uint8Array(1 + ecdsaSig.length);
+  typedSig[0] = 0x00; // SignatureType.EOA
+  typedSig.set(ecdsaSig, 1);
+
+  const validateCalldata = encodeFunctionData({
+    abi: lightWalletAbi,
+    functionName: "validate",
+    args: [bytesToHex(typedSig), 2],
+  });
+  frameTxParams.frames[0].data = hexToBytes(validateCalldata);
+
+  const rawTx = encodeFrameTx(frameTxParams);
+  const txHash = (await publicClient.request({
+    method: "eth_sendRawTransaction" as any,
+    params: [rawTx],
+  })) as Hash;
+  return await waitForReceipt(publicClient, txHash);
+}
+
 // ─── Table output ───────────────────────────────────────────
 
 function pad(s: string, len: number, align: "left" | "right" = "right"): string {
@@ -465,6 +549,24 @@ async function main() {
     });
   };
 
+  const lightEthCalldata = encodeFunctionData({
+    abi: lightWalletAbi,
+    functionName: "execute",
+    args: [DEAD_ADDR, 1n, "0x"],
+  });
+  const lightErc20Calldata = (token: Address) => {
+    const innerData = encodeFunctionData({
+      abi: benchmarkTokenAbi,
+      functionName: "transfer",
+      args: [DEAD_ADDR, 1_000_000_000_000_000_000n],
+    });
+    return encodeFunctionData({
+      abi: lightWalletAbi,
+      functionName: "execute",
+      args: [token, 0n, innerData],
+    });
+  };
+
   // ═════════════════════════════════════════════════════════════
   // Simple8141Account
   // ═════════════════════════════════════════════════════════════
@@ -571,6 +673,42 @@ async function main() {
     { label: "Coinbase", totalGas: 0n, verifyGas: 0n, senderGas: 0n },
     { label: "  ETH transfer", ...coinbaseEth },
     { label: "  ERC20 transfer", ...coinbaseErc20 },
+  );
+
+  // ═════════════════════════════════════════════════════════════
+  // LightAccount8141
+  // ═════════════════════════════════════════════════════════════
+  sectionHeader("🔑 LightAccount8141");
+
+  step("Deploying...");
+  const lightAddr = await deployLightAccount();
+  await fundAccount(walletClient, publicClient, lightAddr);
+
+  step("Minting tokens...");
+  const lightMintCalldata = encodeFunctionData({
+    abi: benchmarkTokenAbi,
+    functionName: "mint",
+    args: [lightAddr, 1_000_000_000_000_000_000_000n],
+  });
+  await sendTx(tokenAddr, lightMintCalldata);
+  success("1,000 BMK minted");
+
+  step("ETH transfer...");
+  const lightEthReceipt = await sendLightAccountFrameTx(lightAddr, lightEthCalldata);
+  verifyReceipt(lightEthReceipt, lightAddr);
+  const lightEth = extractGas(lightEthReceipt);
+  success(`Total: ${fmtGas(lightEth.totalGas)}`);
+
+  step("ERC20 transfer...");
+  const lightErc20Receipt = await sendLightAccountFrameTx(lightAddr, lightErc20Calldata(tokenAddr));
+  verifyReceipt(lightErc20Receipt, lightAddr);
+  const lightErc20 = extractGas(lightErc20Receipt);
+  success(`Total: ${fmtGas(lightErc20.totalGas)}`);
+
+  results.push(
+    { label: "LightAccount", totalGas: 0n, verifyGas: 0n, senderGas: 0n },
+    { label: "  ETH transfer", ...lightEth },
+    { label: "  ERC20 transfer", ...lightErc20 },
   );
 
   // ═════════════════════════════════════════════════════════════
