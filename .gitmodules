@@ -4,3 +4,6 @@
 [submodule "solidity-eip8141"]
 	path = solidity-eip8141
 	url = https://github.com/sm-stack/solidity-eip8141
+[submodule "contracts/lib/solady"]
+	path = contracts/lib/solady
+	url = https://github.com/Vectorized/solady
