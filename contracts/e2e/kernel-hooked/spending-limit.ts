@@ -120,8 +120,10 @@ async function main() {
   const rootVId = `0x01${validatorAddr.slice(2)}` as Hex;
   const salt = "0x0000000000000000000000000000000000000000000000000000000000000000" as Hex;
 
-  // hookData = abi.encode(uint256 dailyLimit) — passed to SpendingLimitHook.onInstall
-  const hookData = encodeAbiParameters(parseAbiParameters("uint256"), [parseEther("5")]);
+  // hookData = [0x00 flag byte][abi.encode(uint256 dailyLimit)]
+  // _installHook strips byte 0 as flag, passes rest to SpendingLimitHook.onInstall
+  const hookInstallData = encodeAbiParameters(parseAbiParameters("uint256"), [parseEther("5")]);
+  const hookData = ("0x00" + hookInstallData.slice(2)) as Hex;
 
   const initData = encodeFunctionData({
     abi: kernelAbi,

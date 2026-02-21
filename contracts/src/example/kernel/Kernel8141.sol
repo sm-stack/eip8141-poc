@@ -200,13 +200,8 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
         ValidationId vId = vs.rootValidator;
         address account = FrameTxLib.txSender();
         bytes32 sigHash = FrameTxLib.sigHash();
-
-        // Find SENDER frame index for cross-frame reading
         uint256 senderFrameIdx = _findSenderFrameIndex();
-
-        // Selector ACL: root validator has access to all selectors
         _validateFrameTx(VALIDATION_MODE_DEFAULT, vId, account, sigHash, senderFrameIdx, sig);
-
         FrameTxLib.approveEmpty(scope);
     }
 
@@ -321,13 +316,13 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
     // ── SENDER frame: Execution ─────────────────────────────────────────
 
     /// @notice Execute a transaction. Called in SENDER frame.
-    /// @dev Wraps execution with hook loaded from transient storage (set during VERIFY frame).
+    /// @dev Wraps execution with root validator's hook (derived from storage).
     function execute(ExecMode execMode, bytes calldata executionCalldata) external payable override {
         if (msg.sender != address(this)) {
             revert InvalidCaller();
         }
-        // EIP-8141 native: load hook from transient storage (set by VERIFY frame)
-        IHook8141 hook = _loadExecutionHook();
+        // Derive hook from root validator's config (VERIFY frames are read-only)
+        IHook8141 hook = _rootValidatorHook();
         bytes memory context;
         bool callHook = address(hook) != HOOK_INSTALLED && address(hook) != HOOK_NOT_INSTALLED;
         if (callHook) {
@@ -362,13 +357,12 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
     }
 
     /// @notice Wrapper for non-root validator calls. sigHash binds this calldata.
-    function validatedCall(IValidator8141, bytes calldata data) external payable {
+    function validatedCall(IValidator8141 validator, bytes calldata data) external payable {
         if (msg.sender != address(this)) {
             revert InvalidCaller();
         }
-        // The validator address in the parameter is for sigHash binding only.
-        // The actual validation happened in VERIFY frame.
-        IHook8141 hook = _loadExecutionHook();
+        // Derive hook from the validator parameter (VERIFY frames are read-only)
+        IHook8141 hook = _validatorHook(validator);
         bytes memory context;
         bool callHook = address(hook) != HOOK_INSTALLED && address(hook) != HOOK_NOT_INSTALLED;
         if (callHook) {

@@ -62,16 +62,14 @@ import {
     MODULE_TYPE_POLICY,
     MODULE_TYPE_SIGNER,
     MODULE_TYPE_VALIDATOR,
-    CALLTYPE_SINGLE,
-    EXECUTION_HOOK_TSLOT,
-    VALIDATION_ID_TSLOT
+    CALLTYPE_SINGLE
 } from "../types/Constants8141.sol";
 
 /// @title ValidationManager8141
 /// @notice Core validation logic for Kernel8141 — manages validators, permissions, nonces, enable mode, EIP-712, ERC-1271.
 /// @dev Ported from Kernel v3 ValidationManager, adapted for EIP-8141 frame transactions.
 ///      Key EIP-8141 advantages:
-///      - Hook pairing via tstore/tload (vs SSTORE ~200x gas savings)
+///      - Hook resolution: SENDER frames derive hook from validator config in storage
 ///      - Selector ACL via frameDataLoad() cross-frame read (no executeUserOp wrapper needed)
 ///      - Policy data via frameDataLoad(senderFrame, offset) for rich execution context
 ///      - Enable data in VERIFY calldata (excluded from sigHash — cleaner separation)
@@ -384,12 +382,8 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
                 revert InvalidValidationType();
             }
 
-            // EIP-8141 native: Store hook address in transient storage for SENDER frame
-            IHook8141 hook = state.validationConfig[vId].hook;
-            assembly {
-                tstore(EXECUTION_HOOK_TSLOT, hook)
-                tstore(VALIDATION_ID_TSLOT, vId)
-            }
+            // NOTE: VERIFY frames are read-only (no sstore/tstore allowed).
+            // The SENDER frame derives the hook from storage directly.
         }
     }
 
@@ -720,19 +714,18 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
         }
     }
 
-    // ── Transient storage helpers (EIP-8141 native) ─────────────────────
+    // ── Hook resolution helpers ─────────────────────────────────────────
 
-    /// @notice Load the execution hook from transient storage (set during VERIFY frame).
-    function _loadExecutionHook() internal view returns (IHook8141 hook) {
-        assembly {
-            hook := tload(EXECUTION_HOOK_TSLOT)
-        }
+    /// @notice Get the hook for the root validator.
+    /// @dev VERIFY frames are read-only, so SENDER frames derive the hook from storage.
+    function _rootValidatorHook() internal view returns (IHook8141) {
+        ValidationStorage storage vs = _validationStorage();
+        return vs.validationConfig[vs.rootValidator].hook;
     }
 
-    /// @notice Load the validation ID from transient storage (set during VERIFY frame).
-    function _loadValidationId() internal view returns (ValidationId vId) {
-        assembly {
-            vId := tload(VALIDATION_ID_TSLOT)
-        }
+    /// @notice Get the hook for a specific validator.
+    function _validatorHook(IValidator8141 validator) internal view returns (IHook8141) {
+        ValidationId vId = ValidatorLib8141.validatorToIdentifier(validator);
+        return _validationStorage().validationConfig[vId].hook;
     }
 }

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {ECDSA} from "solady/utils/ECDSA.sol";
 import {IValidator8141} from "../interfaces/IValidator8141.sol";
 import {IHook8141} from "../interfaces/IHook8141.sol";
 import {
@@ -64,11 +63,24 @@ contract ECDSAValidator is IValidator8141, IHook8141 {
         returns (bool valid)
     {
         address owner = ecdsaValidatorStorage[account].owner;
-        if (owner == ECDSA.recover(sigHash, signature)) {
+        // Use Solidity built-in ecrecover instead of solady ECDSA.recover
+        require(signature.length == 65, "bad sig len");
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := calldataload(signature.offset)
+            s := calldataload(add(signature.offset, 0x20))
+            v := byte(0, calldataload(add(signature.offset, 0x40)))
+        }
+        if (v < 27) v += 27;
+        address recovered = ecrecover(sigHash, v, r, s);
+        if (recovered != address(0) && recovered == owner) {
             return true;
         }
-        bytes32 ethHash = ECDSA.toEthSignedMessageHash(sigHash);
-        return owner == ECDSA.recover(ethHash, signature);
+        bytes32 ethHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", sigHash));
+        recovered = ecrecover(ethHash, v, r, s);
+        return recovered != address(0) && recovered == owner;
     }
 
     /// @inheritdoc IValidator8141
@@ -79,11 +91,24 @@ contract ECDSAValidator is IValidator8141, IHook8141 {
         returns (bytes4)
     {
         address owner = ecdsaValidatorStorage[msg.sender].owner;
-        if (owner == ECDSA.recover(hash, sig)) {
+        // Use native ecrecover (solady ECDSA.recover assembly incompatible with EIP-8141 solc)
+        require(sig.length == 65, "bad sig len");
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := calldataload(sig.offset)
+            s := calldataload(add(sig.offset, 0x20))
+            v := byte(0, calldataload(add(sig.offset, 0x40)))
+        }
+        if (v < 27) v += 27;
+        address recovered = ecrecover(hash, v, r, s);
+        if (recovered != address(0) && recovered == owner) {
             return ERC1271_MAGICVALUE;
         }
-        bytes32 ethHash = ECDSA.toEthSignedMessageHash(hash);
-        if (owner == ECDSA.recover(ethHash, sig)) {
+        bytes32 ethHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", hash));
+        recovered = ecrecover(ethHash, v, r, s);
+        if (recovered != address(0) && recovered == owner) {
             return ERC1271_MAGICVALUE;
         }
         return ERC1271_INVALID;
