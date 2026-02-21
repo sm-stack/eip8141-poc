@@ -4,4 +4,6 @@ out = "out"
 libs = ["lib"]
 solc = "../build/bin/solc"
 evm_version = "osaka"
-optimizer = false
+optimizer = true
+optimizer_runs = 1000000
+via_ir = true
