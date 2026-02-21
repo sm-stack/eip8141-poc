@@ -34,50 +34,57 @@ contract SpendingLimitHookTest is Test {
         assertFalse(hook.isInitialized(address(0xdead)));
     }
 
+    function test_isModuleType_hook() public view {
+        assertTrue(hook.isModuleType(4)); // MODULE_TYPE_HOOK
+        assertFalse(hook.isModuleType(1)); // MODULE_TYPE_VALIDATOR
+    }
+
     function test_onUninstall_clearsState() public {
         vm.prank(account);
-        hook.onUninstall();
+        hook.onUninstall("");
 
         (uint256 dailyLimit,,) = hook.spendingStates(account);
         assertEq(dailyLimit, 0);
         assertFalse(hook.isInitialized(account));
     }
 
-    function test_preExecute_allowsWithinLimit() public {
+    function test_preCheck_allowsWithinLimit() public {
         vm.prank(account);
-        hook.preExecute(address(0xdead), 5 ether, "");
+        hook.preCheck(address(0xdead), 5 ether, "");
 
         (, uint256 spentToday,) = hook.spendingStates(account);
         assertEq(spentToday, 5 ether);
     }
 
-    function test_preExecute_allowsMultipleUnderLimit() public {
+    function test_preCheck_allowsMultipleUnderLimit() public {
         vm.startPrank(account);
-        hook.preExecute(address(0xdead), 3 ether, "");
-        hook.preExecute(address(0xdead), 2 ether, "");
-        hook.preExecute(address(0xdead), 5 ether, "");
+        hook.preCheck(address(0xdead), 3 ether, "");
+        hook.preCheck(address(0xdead), 2 ether, "");
+        hook.preCheck(address(0xdead), 5 ether, "");
         vm.stopPrank();
 
         (, uint256 spentToday,) = hook.spendingStates(account);
         assertEq(spentToday, 10 ether); // Exactly at limit
     }
 
-    function test_preExecute_revertsOverLimit() public {
+    function test_preCheck_revertsOverLimit() public {
         vm.startPrank(account);
-        hook.preExecute(address(0xdead), 6 ether, "");
+        hook.preCheck(address(0xdead), 6 ether, "");
 
-        vm.expectRevert(abi.encodeWithSelector(
-            SpendingLimitHook.DailyLimitExceeded.selector,
-            5 ether,  // requested
-            4 ether   // available
-        ));
-        hook.preExecute(address(0xdead), 5 ether, "");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SpendingLimitHook.DailyLimitExceeded.selector,
+                5 ether, // requested
+                4 ether // available
+            )
+        );
+        hook.preCheck(address(0xdead), 5 ether, "");
         vm.stopPrank();
     }
 
-    function test_preExecute_resetsDaily() public {
+    function test_preCheck_resetsDaily() public {
         vm.prank(account);
-        hook.preExecute(address(0xdead), 8 ether, "");
+        hook.preCheck(address(0xdead), 8 ether, "");
 
         (, uint256 spentBefore,) = hook.spendingStates(account);
         assertEq(spentBefore, 8 ether);
@@ -86,10 +93,22 @@ contract SpendingLimitHookTest is Test {
         vm.warp(block.timestamp + 1 days);
 
         vm.prank(account);
-        hook.preExecute(address(0xdead), 7 ether, "");
+        hook.preCheck(address(0xdead), 7 ether, "");
 
         (, uint256 spentAfter,) = hook.spendingStates(account);
         assertEq(spentAfter, 7 ether); // Reset and new spending
+    }
+
+    function test_preCheck_returnsContext() public {
+        vm.prank(account);
+        bytes memory hookData = hook.preCheck(address(0xdead), 5 ether, "");
+        uint256 amount = abi.decode(hookData, (uint256));
+        assertEq(amount, 5 ether);
+    }
+
+    function test_postCheck_noop() public {
+        vm.prank(account);
+        hook.postCheck(""); // Should not revert
     }
 
     function test_setDailyLimit() public {

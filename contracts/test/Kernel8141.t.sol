@@ -3,11 +3,16 @@ pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {Kernel8141} from "../src/example/kernel/Kernel8141.sol";
+import {Kernel8141Factory} from "../src/example/kernel/factory/Kernel8141Factory.sol";
 import {ECDSAValidator} from "../src/example/kernel/validators/ECDSAValidator.sol";
 import {IValidator8141} from "../src/example/kernel/interfaces/IValidator8141.sol";
+import {IHook8141} from "../src/example/kernel/interfaces/IHook8141.sol";
+import {ValidatorLib8141} from "../src/example/kernel/utils/ValidatorLib8141.sol";
+import {ValidationId, ExecMode} from "../src/example/kernel/types/Types8141.sol";
 
 contract Kernel8141Test is Test {
     Kernel8141 kernel;
+    Kernel8141Factory factory;
     ECDSAValidator ecdsaValidator;
     address owner;
     uint256 ownerKey;
@@ -15,186 +20,105 @@ contract Kernel8141Test is Test {
     function setUp() public {
         (owner, ownerKey) = makeAddrAndKey("owner");
         ecdsaValidator = new ECDSAValidator();
-        kernel = new Kernel8141(ecdsaValidator, abi.encode(owner));
+
+        // Deploy implementation + factory
+        Kernel8141 impl = new Kernel8141();
+        factory = new Kernel8141Factory(address(impl));
+
+        // Create proxy via factory
+        ValidationId rootVId = ValidatorLib8141.validatorToIdentifier(IValidator8141(address(ecdsaValidator)));
+        bytes memory initData = abi.encodeCall(
+            Kernel8141.initialize,
+            (
+                rootVId,
+                IHook8141(address(1)), // HOOK_INSTALLED sentinel
+                abi.encodePacked(owner),
+                "",
+                new bytes[](0)
+            )
+        );
+        address account = factory.createAccount(initData, bytes32(0));
+        kernel = Kernel8141(payable(account));
     }
 
     // ── Initialization ───────────────────────────────────────────────
 
-    function test_initialized() public view {
-        assertTrue(kernel.initialized());
+    function test_initialize_setsRootValidator() public view {
+        assertTrue(kernel.isModuleInstalled(1, address(ecdsaValidator), ""));
     }
 
-    function test_rootValidator() public view {
-        assertEq(address(kernel.rootValidator()), address(ecdsaValidator));
-    }
-
-    function test_validatorInstalled() public view {
-        assertTrue(kernel.isValidatorInstalled(ecdsaValidator));
-    }
-
-    function test_ecdsaValidatorOwnerSet() public view {
-        assertEq(ecdsaValidator.owners(address(kernel)), owner);
+    function test_initialize_setsOwner() public view {
+        (address storedOwner) = ecdsaValidator.ecdsaValidatorStorage(address(kernel));
+        assertEq(storedOwner, owner);
     }
 
     function test_initialize_revertsIfAlreadyInitialized() public {
+        ValidationId rootVId = ValidatorLib8141.validatorToIdentifier(IValidator8141(address(ecdsaValidator)));
         vm.expectRevert(Kernel8141.AlreadyInitialized.selector);
-        kernel.initialize(ecdsaValidator, abi.encode(owner));
+        kernel.initialize(rootVId, IHook8141(address(1)), abi.encodePacked(owner), "", new bytes[](0));
     }
 
-    // ── execute ──────────────────────────────────────────────────────
+    // ── Factory ──────────────────────────────────────────────────────
 
-    function test_execute_revertsIfNotSelf() public {
-        vm.expectRevert(Kernel8141.InvalidCaller.selector);
-        kernel.execute(address(0xdead), 0, "");
-    }
-
-    function test_execute_sendsEth() public {
-        vm.deal(address(kernel), 1 ether);
-        address target = address(0xdead);
-
-        vm.prank(address(kernel));
-        kernel.execute(target, 0.5 ether, "");
-
-        assertEq(target.balance, 0.5 ether);
-    }
-
-    function test_execute_callWithData() public {
-        Counter counter = new Counter();
-
-        vm.prank(address(kernel));
-        kernel.execute(
-            address(counter),
-            0,
-            abi.encodeWithSelector(Counter.increment.selector)
+    function test_factory_deterministicAddress() public view {
+        ValidationId rootVId = ValidatorLib8141.validatorToIdentifier(IValidator8141(address(ecdsaValidator)));
+        bytes memory initData = abi.encodeCall(
+            Kernel8141.initialize,
+            (rootVId, IHook8141(address(1)), abi.encodePacked(owner), "", new bytes[](0))
         );
-
-        assertEq(counter.count(), 1);
+        address predicted = factory.getAddress(initData, bytes32(0));
+        assertEq(predicted, address(kernel));
     }
 
-    function test_execute_revertsOnFailedCall() public {
-        Reverter reverter = new Reverter();
-
-        vm.prank(address(kernel));
-        vm.expectRevert(Kernel8141.ExecutionFailed.selector);
-        kernel.execute(address(reverter), 0, abi.encodeWithSelector(Reverter.fail.selector));
+    function test_factory_createAccount_idempotent() public {
+        ValidationId rootVId = ValidatorLib8141.validatorToIdentifier(IValidator8141(address(ecdsaValidator)));
+        bytes memory initData = abi.encodeCall(
+            Kernel8141.initialize,
+            (rootVId, IHook8141(address(1)), abi.encodePacked(owner), "", new bytes[](0))
+        );
+        // Second call returns same address without reverting
+        address account2 = factory.createAccount(initData, bytes32(0));
+        assertEq(account2, address(kernel));
     }
 
-    // ── executeBatch ─────────────────────────────────────────────────
+    // ── Introspection ────────────────────────────────────────────────
 
-    function test_executeBatch_revertsIfNotSelf() public {
-        address[] memory targets = new address[](0);
-        uint256[] memory values = new uint256[](0);
-        bytes[] memory datas = new bytes[](0);
-
-        vm.expectRevert(Kernel8141.InvalidCaller.selector);
-        kernel.executeBatch(targets, values, datas);
+    function test_accountId() public view {
+        assertEq(kernel.accountId(), "kernel8141.v0.1.0");
     }
 
-    function test_executeBatch_multipleCalls() public {
-        Counter counter = new Counter();
-
-        address[] memory targets = new address[](2);
-        targets[0] = address(counter);
-        targets[1] = address(counter);
-
-        uint256[] memory values = new uint256[](2);
-
-        bytes[] memory datas = new bytes[](2);
-        datas[0] = abi.encodeWithSelector(Counter.increment.selector);
-        datas[1] = abi.encodeWithSelector(Counter.increment.selector);
-
-        vm.prank(address(kernel));
-        kernel.executeBatch(targets, values, datas);
-
-        assertEq(counter.count(), 2);
+    function test_supportsModule() public view {
+        assertTrue(kernel.supportsModule(1)); // VALIDATOR
+        assertTrue(kernel.supportsModule(2)); // EXECUTOR
+        assertTrue(kernel.supportsModule(3)); // FALLBACK
+        assertTrue(kernel.supportsModule(4)); // HOOK
+        assertTrue(kernel.supportsModule(5)); // POLICY
+        assertTrue(kernel.supportsModule(6)); // SIGNER
+        assertFalse(kernel.supportsModule(0));
+        assertFalse(kernel.supportsModule(7));
     }
 
-    function test_executeBatch_revertsOnLengthMismatch() public {
-        address[] memory targets = new address[](1);
-        uint256[] memory values = new uint256[](2);
-        bytes[] memory datas = new bytes[](1);
-
-        vm.prank(address(kernel));
-        vm.expectRevert(Kernel8141.BatchLengthMismatch.selector);
-        kernel.executeBatch(targets, values, datas);
+    function test_isModuleInstalled_validator() public view {
+        assertTrue(kernel.isModuleInstalled(1, address(ecdsaValidator), ""));
+        assertFalse(kernel.isModuleInstalled(1, address(0xdead), ""));
     }
 
-    // ── Module Management ────────────────────────────────────────────
+    // ── Token receivers ──────────────────────────────────────────────
 
-    function test_installValidator() public {
-        ECDSAValidator newValidator = new ECDSAValidator();
-        address newOwner = makeAddr("newOwner");
-
-        vm.prank(address(kernel));
-        kernel.installValidator(newValidator, abi.encode(newOwner));
-
-        assertTrue(kernel.isValidatorInstalled(newValidator));
-        assertEq(newValidator.owners(address(kernel)), newOwner);
+    function test_onERC721Received() public view {
+        bytes4 result = kernel.onERC721Received(address(0), address(0), 0, "");
+        assertEq(result, kernel.onERC721Received.selector);
     }
 
-    function test_installValidator_revertsIfNotSelf() public {
-        ECDSAValidator newValidator = new ECDSAValidator();
-        vm.expectRevert(Kernel8141.InvalidCaller.selector);
-        kernel.installValidator(newValidator, abi.encode(owner));
+    function test_onERC1155Received() public view {
+        bytes4 result = kernel.onERC1155Received(address(0), address(0), 0, 0, "");
+        assertEq(result, kernel.onERC1155Received.selector);
     }
 
-    function test_installValidator_revertsIfAlreadyInstalled() public {
-        vm.prank(address(kernel));
-        vm.expectRevert(Kernel8141.ValidatorAlreadyInstalled.selector);
-        kernel.installValidator(ecdsaValidator, abi.encode(owner));
-    }
-
-    function test_uninstallValidator() public {
-        ECDSAValidator extra = new ECDSAValidator();
-
-        vm.prank(address(kernel));
-        kernel.installValidator(extra, abi.encode(owner));
-        assertTrue(kernel.isValidatorInstalled(extra));
-
-        vm.prank(address(kernel));
-        kernel.uninstallValidator(extra);
-        assertFalse(kernel.isValidatorInstalled(extra));
-    }
-
-    function test_uninstallValidator_revertsForRoot() public {
-        vm.prank(address(kernel));
-        vm.expectRevert(Kernel8141.CannotRemoveRootValidator.selector);
-        kernel.uninstallValidator(ecdsaValidator);
-    }
-
-    function test_uninstallValidator_revertsIfNotInstalled() public {
-        ECDSAValidator unknown = new ECDSAValidator();
-        vm.prank(address(kernel));
-        vm.expectRevert(Kernel8141.ValidatorNotInstalled.selector);
-        kernel.uninstallValidator(unknown);
-    }
-
-    function test_changeRootValidator() public {
-        ECDSAValidator newValidator = new ECDSAValidator();
-        address newOwner = makeAddr("newOwner");
-
-        vm.prank(address(kernel));
-        kernel.changeRootValidator(newValidator, abi.encode(newOwner));
-
-        assertEq(address(kernel.rootValidator()), address(newValidator));
-        assertTrue(kernel.isValidatorInstalled(newValidator));
-        assertFalse(kernel.isValidatorInstalled(ecdsaValidator));
-        assertEq(newValidator.owners(address(kernel)), newOwner);
-    }
-
-    function test_changeRootValidator_revertsIfNotSelf() public {
-        ECDSAValidator newValidator = new ECDSAValidator();
-        vm.expectRevert(Kernel8141.InvalidCaller.selector);
-        kernel.changeRootValidator(newValidator, abi.encode(owner));
-    }
-
-    // ── validate ─────────────────────────────────────────────────────
-    // Note: validate() relies on EIP-8141 opcodes (TXPARAMLOAD, APPROVE)
-    // Full validation testing requires the custom geth devnet.
-
-    function test_validate_revertsIfNotEntryPoint() public {
-        vm.expectRevert(Kernel8141.InvalidCaller.selector);
-        kernel.validate(hex"", 2);
+    function test_onERC1155BatchReceived() public view {
+        bytes4 result =
+            kernel.onERC1155BatchReceived(address(0), address(0), new uint256[](0), new uint256[](0), "");
+        assertEq(result, kernel.onERC1155BatchReceived.selector);
     }
 
     // ── receive ──────────────────────────────────────────────────────
@@ -205,15 +129,25 @@ contract Kernel8141Test is Test {
         assertTrue(ok);
         assertEq(address(kernel).balance, 1 ether);
     }
-}
 
-// ── Helpers ──────────────────────────────────────────────────────────
+    // ── execute requires msg.sender == address(this) ─────────────────
 
-contract Counter {
-    uint256 public count;
-    function increment() external { count++; }
-}
+    function test_execute_revertsIfNotSelf() public {
+        vm.expectRevert(Kernel8141.InvalidCaller.selector);
+        kernel.execute(ExecMode.wrap(bytes32(0)), "");
+    }
 
-contract Reverter {
-    function fail() external pure { revert("always reverts"); }
+    // ── Module management via onlySelfOrRoot ─────────────────────────
+    // ECDSAValidator implements IHook8141 (isModuleType(4)=true),
+    // so owner can call kernel directly via rootValidator hook gate.
+
+    function test_installModule_revertsIfNotSelfOrOwner() public {
+        ECDSAValidator newValidator = new ECDSAValidator();
+        vm.prank(address(0xbad));
+        vm.expectRevert("ECDSAValidator: sender is not owner");
+        kernel.installModule(1, address(newValidator), abi.encodePacked(address(1), abi.encode("", "", "")));
+    }
+
+    // Note: validate/execute require EIP-8141 opcodes not available in Forge.
+    // Full E2E testing requires the EIP-8141 devnet.
 }

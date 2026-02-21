@@ -6,35 +6,19 @@ import {DefaultExecutor} from "../src/example/kernel/executors/DefaultExecutor.s
 
 contract DefaultExecutorTest is Test {
     DefaultExecutor executor;
-    Counter counter;
 
     function setUp() public {
         executor = new DefaultExecutor();
-        counter = new Counter();
     }
 
-    function test_executeWithData_success() public {
-        bytes memory callData = abi.encodeWithSelector(Counter.increment.selector);
-
-        executor.executeWithData(address(counter), 0, callData);
-
-        assertEq(counter.count(), 1);
+    function test_isModuleType_executor() public view {
+        assertTrue(executor.isModuleType(2)); // MODULE_TYPE_EXECUTOR
     }
 
-    function test_executeWithData_withValue() public {
-        vm.deal(address(this), 1 ether);
-
-        executor.executeWithData{value: 0.5 ether}(address(counter), 0.5 ether, "");
-
-        assertEq(address(counter).balance, 0.5 ether);
-    }
-
-    function test_executeWithData_revertsOnFailure() public {
-        Reverter reverter = new Reverter();
-        bytes memory callData = abi.encodeWithSelector(Reverter.fail.selector);
-
-        vm.expectRevert("DefaultExecutor: call failed");
-        executor.executeWithData(address(reverter), 0, callData);
+    function test_isModuleType_otherTypes() public view {
+        assertFalse(executor.isModuleType(1)); // MODULE_TYPE_VALIDATOR
+        assertFalse(executor.isModuleType(3)); // MODULE_TYPE_FALLBACK
+        assertFalse(executor.isModuleType(4)); // MODULE_TYPE_HOOK
     }
 
     function test_isInitialized_alwaysTrue() public view {
@@ -49,16 +33,6 @@ contract DefaultExecutorTest is Test {
     }
 
     function test_onUninstall_noop() public {
-        executor.onUninstall();
+        executor.onUninstall("");
     }
-}
-
-contract Counter {
-    uint256 public count;
-    function increment() external { count++; }
-    receive() external payable {}
-}
-
-contract Reverter {
-    function fail() external pure { revert("always reverts"); }
 }
