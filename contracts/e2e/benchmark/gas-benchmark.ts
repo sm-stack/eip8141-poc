@@ -7,6 +7,8 @@
  * Usage: cd contracts && npx tsx e2e/benchmark/gas-benchmark.ts
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import {
   encodeAbiParameters,
   parseAbiParameters,
@@ -497,6 +499,40 @@ async function main() {
   // ═════════════════════════════════════════════════════════════
   banner("📊 Results");
   printTable(results);
+  writeMarkdownReport(results);
+}
+
+function writeMarkdownReport(results: GasResult[]) {
+  const timestamp = new Date().toISOString().replace(/T/, " ").replace(/\..+/, " UTC");
+  const lines: string[] = [
+    "# EIP-8141 Gas Benchmark Results",
+    "",
+    `> Generated: ${timestamp}`,
+    "",
+    "| Account | Operation | Total Gas | Verify Gas | Sender Gas |",
+    "|---|---|---:|---:|---:|",
+  ];
+
+  for (const r of results) {
+    if (r.totalGas === 0n) continue;
+    const account = r.label.startsWith("  ") ? "" : r.label;
+    const op = r.label.trim();
+    // Find the parent header for indented rows
+    const parentLabel = r.label.startsWith("  ")
+      ? results.slice(0, results.indexOf(r)).reverse().find((x) => x.totalGas === 0n)?.label ?? ""
+      : "";
+    const acct = r.label.startsWith("  ") ? parentLabel : r.label;
+    lines.push(
+      `| ${acct} | ${op} | ${fmtGas(r.totalGas)} | ${fmtGas(r.verifyGas)} | ${fmtGas(r.senderGas)} |`
+    );
+  }
+
+  lines.push("");
+
+  const outDir = path.resolve(__dirname, "../../..");
+  const outPath = path.join(outDir, "BENCHMARK.md");
+  fs.writeFileSync(outPath, lines.join("\n") + "\n");
+  success(`Report saved to ${outPath}`);
 }
 
 main().catch((err) => {
