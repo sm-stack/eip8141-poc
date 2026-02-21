@@ -1,5 +1,5 @@
 /**
- * E2E: Kernel8141 module management and execution tests (Tests 1-7)
+ * E2E: Kernel8141 module management and execution tests (Tests 1-5)
  *
  * Usage: cd contracts && npx tsx e2e/kernel/kernel-basic.ts
  */
@@ -10,9 +10,11 @@ import {
   encodeFunctionData,
   hexToBytes,
   bytesToHex,
-  parseEther,
+  concatHex,
+  padHex,
   type Hex,
   type Hash,
+  type Address,
 } from "viem";
 import { CHAIN_ID, DEV_KEY, DEAD_ADDR, FRAME_MODE_VERIFY, FRAME_MODE_SENDER } from "../helpers/config.js";
 import { waitForReceipt } from "../helpers/client.js";
@@ -23,6 +25,43 @@ import { kernelAbi } from "../helpers/abis/kernel.js";
 import { testHeader, testPassed, summary, fatal } from "../helpers/log.js";
 import { deployKernelTestbed, type KernelTestContext } from "./setup.js";
 
+// ── ExecMode encoding ────────────────────────────────────────────────
+// ExecMode (bytes32) = [1B callType][1B execType][4B selector][22B payload]
+const CALLTYPE_SINGLE   = "0x00";
+const CALLTYPE_BATCH    = "0x01";
+const EXECTYPE_DEFAULT  = "0x00";
+const EXECTYPE_TRY      = "0x01";
+
+function encodeExecMode(callType: string, execType: string): Hex {
+  // 1B callType + 1B execType + 30B zeros = 32 bytes
+  return padHex(
+    `0x${callType.slice(2)}${execType.slice(2)}` as Hex,
+    { size: 32, dir: "right" }
+  );
+}
+
+// ── Execution calldata encoding ──────────────────────────────────────
+// Single: abi.encodePacked(target(20B), value(32B), calldata)
+function encodeSingleExec(target: Address, value: bigint, data: Hex = "0x"): Hex {
+  const targetHex = target.slice(2).toLowerCase().padStart(40, "0");
+  const valueHex = value.toString(16).padStart(64, "0");
+  const dataHex = data.slice(2);
+  return `0x${targetHex}${valueHex}${dataHex}` as Hex;
+}
+
+// Batch: abi.encode(Execution[]) where Execution = (address, uint256, bytes)
+function encodeBatchExec(executions: { target: Address; value: bigint; data: Hex }[]): Hex {
+  return encodeAbiParameters(
+    [{ type: "tuple[]", components: [
+      { name: "target", type: "address" },
+      { name: "value", type: "uint256" },
+      { name: "callData", type: "bytes" },
+    ]}],
+    [executions.map(e => ({ target: e.target, value: e.value, callData: e.data }))]
+  );
+}
+
+// ── Frame TX helper ──────────────────────────────────────────────────
 async function sendFrameTx(
   ctx: KernelTestContext,
   senderCalldata: Hex,
@@ -70,65 +109,38 @@ async function main() {
   const ctx = await deployKernelTestbed();
   let testNum = 1;
 
+  // ── Test 1: Install DefaultExecutor ────────────────────────────────
   testHeader(testNum++, "Install DefaultExecutor");
   {
-    const executorConfig = encodeAbiParameters(
-      parseAbiParameters("bytes4[], uint48, uint48, uint8"),
-      [["0xb61d27f6"], 0, 0, 2]
+    // installModule(2=EXECUTOR, module, initData)
+    // initData = [20B hookAddr][abi.encode(executorData, hookData)]
+    const HOOK_INSTALLED = "0x0000000000000000000000000000000000000001";
+    const structData = encodeAbiParameters(
+      parseAbiParameters("bytes, bytes"),
+      ["0x", "0x"]
     );
+    const initData = concatHex([HOOK_INSTALLED as Hex, structData]);
+
     const installCalldata = encodeFunctionData({
       abi: kernelAbi,
       functionName: "installModule",
-      args: [1, ctx.defaultExecutorAddr, executorConfig],
+      args: [2n, ctx.defaultExecutorAddr, initData],
     });
     const receipt = await sendFrameTx(ctx, installCalldata);
     printReceipt(receipt);
     verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
-    testPassed("DefaultExecutor installed for execute()");
+    testPassed("DefaultExecutor installed");
   }
 
-  testHeader(testNum++, "Install SpendingLimitHook");
+  // ── Test 2: Basic execute (single call) ────────────────────────────
+  testHeader(testNum++, "Single execute()");
   {
-    const hookData = encodeAbiParameters(parseAbiParameters("uint256"), [parseEther("5")]);
-    const hookConfig = encodeAbiParameters(
-      parseAbiParameters("bytes4[], bytes"),
-      [["0xb61d27f6"], hookData]
-    );
-    const installCalldata = encodeFunctionData({
-      abi: kernelAbi,
-      functionName: "installModule",
-      args: [2, ctx.hookAddr, hookConfig],
-    });
-    const receipt = await sendFrameTx(ctx, installCalldata);
-    printReceipt(receipt);
-    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
-    testPassed("SpendingLimitHook installed (5 ETH daily limit)");
-  }
-
-  testHeader(testNum++, "Install ERC1271Handler");
-  {
-    const handlerData = encodeAbiParameters(parseAbiParameters("address"), [ctx.validatorAddr]);
-    const handlerConfig = encodeAbiParameters(
-      parseAbiParameters("bytes4[], bytes"),
-      [["0x1626ba7e"], handlerData]
-    );
-    const installCalldata = encodeFunctionData({
-      abi: kernelAbi,
-      functionName: "installModule",
-      args: [4, ctx.handlerAddr, handlerConfig],
-    });
-    const receipt = await sendFrameTx(ctx, installCalldata);
-    printReceipt(receipt);
-    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
-    testPassed("ERC1271Handler installed");
-  }
-
-  testHeader(testNum++, "Basic execute()");
-  {
+    const execMode = encodeExecMode(CALLTYPE_SINGLE, EXECTYPE_DEFAULT);
+    const execCalldata = encodeSingleExec(DEAD_ADDR, 0n);
     const calldata = encodeFunctionData({
       abi: kernelAbi,
       functionName: "execute",
-      args: [DEAD_ADDR, 0n, "0x"],
+      args: [execMode, execCalldata],
     });
     const receipt = await sendFrameTx(ctx, calldata);
     printReceipt(receipt);
@@ -136,12 +148,18 @@ async function main() {
     testPassed();
   }
 
-  testHeader(testNum++, "executeBatch()");
+  // ── Test 3: Batch execute ──────────────────────────────────────────
+  testHeader(testNum++, "Batch execute()");
   {
+    const execMode = encodeExecMode(CALLTYPE_BATCH, EXECTYPE_DEFAULT);
+    const execCalldata = encodeBatchExec([
+      { target: DEAD_ADDR, value: 0n, data: "0x" },
+      { target: DEAD_ADDR, value: 0n, data: "0x" },
+    ]);
     const calldata = encodeFunctionData({
       abi: kernelAbi,
-      functionName: "executeBatch",
-      args: [[DEAD_ADDR, DEAD_ADDR], [0n, 0n], ["0x", "0x"]],
+      functionName: "execute",
+      args: [execMode, execCalldata],
     });
     const receipt = await sendFrameTx(ctx, calldata);
     printReceipt(receipt);
@@ -149,12 +167,20 @@ async function main() {
     testPassed();
   }
 
-  testHeader(testNum++, "executeTry() — graceful failure");
+  // ── Test 4: Single executeTry (graceful failure) ───────────────────
+  testHeader(testNum++, "executeTry (single) — graceful failure");
   {
+    const execMode = encodeExecMode(CALLTYPE_SINGLE, EXECTYPE_TRY);
+    // Call to address(1) with bogus data — will fail but try mode catches it
+    const execCalldata = encodeSingleExec(
+      "0x0000000000000000000000000000000000000001" as Address,
+      0n,
+      "0xdeadbeef"
+    );
     const calldata = encodeFunctionData({
       abi: kernelAbi,
-      functionName: "executeTry",
-      args: ["0x0000000000000000000000000000000000000001", 0n, "0xdeadbeef"],
+      functionName: "execute",
+      args: [execMode, execCalldata],
     });
     const receipt = await sendFrameTx(ctx, calldata);
     printReceipt(receipt);
@@ -162,16 +188,18 @@ async function main() {
     testPassed("executeTry handled failure gracefully");
   }
 
-  testHeader(testNum++, "executeBatchTry() — mixed success/failure");
+  // ── Test 5: Batch executeTry (mixed success/failure) ───────────────
+  testHeader(testNum++, "executeBatchTry — mixed success/failure");
   {
+    const execMode = encodeExecMode(CALLTYPE_BATCH, EXECTYPE_TRY);
+    const execCalldata = encodeBatchExec([
+      { target: DEAD_ADDR, value: 0n, data: "0x" },
+      { target: "0x0000000000000000000000000000000000000001" as Address, value: 0n, data: "0xdeadbeef" },
+    ]);
     const calldata = encodeFunctionData({
       abi: kernelAbi,
-      functionName: "executeBatchTry",
-      args: [
-        [DEAD_ADDR, "0x0000000000000000000000000000000000000001"],
-        [0n, 0n],
-        ["0x", "0xdeadbeef"],
-      ],
+      functionName: "execute",
+      args: [execMode, execCalldata],
     });
     const receipt = await sendFrameTx(ctx, calldata);
     printReceipt(receipt);

@@ -10,6 +10,9 @@ import {
   encodeFunctionData,
   hexToBytes,
   bytesToHex,
+  concatHex,
+  padHex,
+  toFunctionSelector,
   type Hex,
   type Hash,
   type Address,
@@ -25,6 +28,24 @@ import { kernelAbi } from "../helpers/abis/kernel.js";
 import { sectionHeader, testHeader, step, info, testPassed, summary, fatal } from "../helpers/log.js";
 import { deployKernelTestbed, type KernelTestContext } from "./setup.js";
 
+// ── ExecMode encoding ────────────────────────────────────────────────
+function encodeExecMode(callType: string, execType: string): Hex {
+  return padHex(
+    `0x${callType.slice(2)}${execType.slice(2)}` as Hex,
+    { size: 32, dir: "right" }
+  );
+}
+
+function encodeSingleExec(target: Address, value: bigint, data: Hex = "0x"): Hex {
+  const targetHex = target.slice(2).toLowerCase().padStart(40, "0");
+  const valueHex = value.toString(16).padStart(64, "0");
+  const dataHex = data.slice(2);
+  return `0x${targetHex}${valueHex}${dataHex}` as Hex;
+}
+
+// ── Frame TX helpers ─────────────────────────────────────────────────
+
+/** Send frame tx validated by root validator (validate). */
 async function sendFrameTx(
   ctx: KernelTestContext,
   senderCalldata: Hex,
@@ -66,6 +87,7 @@ async function sendFrameTx(
   return await waitForReceipt(publicClient, txHash);
 }
 
+/** Send frame tx validated by non-root validator (validateFromSenderFrame + validatedCall). */
 async function sendFrameTxWithValidator(
   ctx: KernelTestContext,
   signingKey: Hex,
@@ -78,6 +100,7 @@ async function sendFrameTxWithValidator(
   const block = await publicClient.getBlock();
   const gasFeeCap = block.baseFeePerGas! + 2_000_000_000n;
 
+  // SENDER frame: validatedCall(validator, innerCalldata)
   const senderCalldata = encodeFunctionData({
     abi: kernelAbi,
     functionName: "validatedCall",
@@ -100,10 +123,15 @@ async function sendFrameTxWithValidator(
 
   const sigHash = computeSigHash(frameTxParams);
   const { packed: packedSig } = signFrameHash(sigHash, signingKey);
+
+  // sig format for validateFromSenderFrame: [1B type=0x01][20B validatorAddr][65B sig]
+  const sigPrefix = `0x01${validatorAddr.slice(2)}` as Hex;
+  const prefixedSig = concatHex([sigPrefix, bytesToHex(packedSig)]);
+
   const validateCalldata = encodeFunctionData({
     abi: kernelAbi,
     functionName: "validateFromSenderFrame",
-    args: [bytesToHex(packedSig), 2],
+    args: [prefixedSig, 2],
   });
   frameTxParams.frames[0].data = hexToBytes(validateCalldata);
 
@@ -118,48 +146,50 @@ async function sendFrameTxWithValidator(
 async function main() {
   const ctx = await deployKernelTestbed();
 
-  sectionHeader("🔧 Setup: Install DefaultExecutor");
-  {
-    const executorConfig = encodeAbiParameters(
-      parseAbiParameters("bytes4[], uint48, uint48, uint8"),
-      [["0xb61d27f6"], 0, 0, 2]
-    );
-    const installCalldata = encodeFunctionData({
-      abi: kernelAbi,
-      functionName: "installModule",
-      args: [1, ctx.defaultExecutorAddr, executorConfig],
-    });
-    const receipt = await sendFrameTx(ctx, installCalldata);
-    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
-  }
-
   testHeader(1, "validateFromSenderFrame + validatedCall (sigHash-bound)");
   {
     const secondOwnerAccount = privateKeyToAccount(SECOND_OWNER_KEY);
     const secondOwnerAddr = secondOwnerAccount.address;
     info(`Second owner: ${secondOwnerAddr}`);
 
+    // Deploy second ECDSAValidator
     step("Deploying second ECDSAValidator...");
     const validatorBytecode = loadBytecode("ECDSAValidator");
     const { address: secondValidatorAddr } = await deployContract(
       ctx.walletClient, ctx.publicClient, validatorBytecode, 3_000_000n, "ECDSAValidator #2"
     );
 
+    // Install second validator via installModule(1=VALIDATOR, module, initData)
+    // initData = [20B hookAddr][abi.encode(validatorData, hookData, selectorData)]
+    // - hookAddr: HOOK_INSTALLED sentinel (no real hook)
+    // - validatorData: abi.encodePacked(secondOwnerAddr) = 20 bytes
+    // - hookData: empty
+    // - selectorData: validatedCall selector (4 bytes → auto-grants selector ACL)
     step("Installing second validator...");
-    const installConfig = encodeAbiParameters(parseAbiParameters("address"), [secondOwnerAddr]);
+    const HOOK_INSTALLED = "0x0000000000000000000000000000000000000001" as Hex;
+    const validatedCallSelector = toFunctionSelector("validatedCall(address,bytes)");
+    const structData = encodeAbiParameters(
+      parseAbiParameters("bytes, bytes, bytes"),
+      [secondOwnerAddr, "0x", validatedCallSelector]
+    );
+    const installInitData = concatHex([HOOK_INSTALLED, structData]);
+
     const installCalldata = encodeFunctionData({
       abi: kernelAbi,
       functionName: "installModule",
-      args: [0, secondValidatorAddr, installConfig],
+      args: [1n, secondValidatorAddr, installInitData],
     });
     const installReceipt = await sendFrameTx(ctx, installCalldata);
     verifyReceipt(installReceipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
 
+    // Send frame tx with non-root validator
     step("Sending frame tx with non-root validator...");
+    const execMode = padHex("0x0000" as Hex, { size: 32, dir: "right" }); // single + default
+    const execCalldata = encodeSingleExec(DEAD_ADDR, 0n);
     const innerCalldata = encodeFunctionData({
       abi: kernelAbi,
       functionName: "execute",
-      args: [DEAD_ADDR, 0n, "0x"],
+      args: [execMode, execCalldata],
     });
     const receipt = await sendFrameTxWithValidator(
       ctx, SECOND_OWNER_KEY as Hex, secondValidatorAddr, innerCalldata
