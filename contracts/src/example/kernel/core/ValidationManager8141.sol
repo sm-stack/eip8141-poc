@@ -442,6 +442,10 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
     /// @dev EIP-8141 advantage: enable data is in VERIFY frame calldata, which is
     ///      excluded from sigHash computation. This means enable data doesn't pollute
     ///      the signature at all — cleaner separation than Kernel v3.
+    ///
+    /// WARNING: Currently non-functional. This is called from a VERIFY frame (read-only),
+    /// but _enableValidationWithSig() writes to persistent storage via _installValidation(),
+    /// _configureSelector(), and _grantAccess(). All `sstore` operations revert in VERIFY frames.
     function _enableMode(ValidationId vId, bytes calldata packedData, bool isReplayable)
         internal
         returns (ValidationData validationData, bytes calldata sig)

@@ -252,6 +252,14 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
 
     /// @notice Enable mode: install a new validator and validate in one VERIFY frame.
     /// @dev EIP-8141 advantage: enable data is in VERIFY calldata, excluded from sigHash.
+    ///
+    /// WARNING: This function is currently non-functional under EIP-8141.
+    /// The enable mode calls _installValidation(), _configureSelector(), and _grantAccess(),
+    /// all of which perform `sstore` (persistent storage writes). However, this function
+    /// executes inside a VERIFY frame, which is read-only (equivalent to STATICCALL).
+    /// Any `sstore` or `tstore` in a VERIFY frame causes an immediate revert.
+    /// To make enable mode work, the install logic would need to be moved to the
+    /// SENDER frame, or performed in a separate transaction.
     function validateWithEnable(bytes calldata enableData, bytes calldata sig, uint8 scope) external {
         _requireVerifyFrame();
         address account = FrameTxLib.txSender();
