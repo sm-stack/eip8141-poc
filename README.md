@@ -1,14 +1,13 @@
-# Salvador v2 — EIP-8141 Proof of Concept
+# EIP-8141 Proof of Concept
 
 > **This is experimental, proof-of-concept code. It is NOT production-ready and may contain bugs.
 > Do not use in any environment where real assets are at risk.**
 
-Salvador v2 is a reference implementation for [EIP-8141](https://github.com/ethereum/EIPs/pull/8141) (Frame Transactions), demonstrating native account abstraction on Ethereum with a modified geth client and Solidity compiler.
+A reference implementation for [EIP-8141](https://github.com/ethereum/EIPs/pull/8141) (Frame Transactions), demonstrating native account abstraction on Ethereum with a modified geth client and Solidity compiler.
 
 ## Repository Structure
 
 ```
-salvador-v2/
 ├── 8141-geth/             # Modified go-ethereum with frame transaction support
 ├── solidity-eip8141/      # Modified solc with EIP-8141 opcodes (APPROVE, TXPARAMLOAD, ...)
 ├── contracts/             # Solidity smart contracts (Foundry)
