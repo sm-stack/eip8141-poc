@@ -15,6 +15,7 @@ import {
   encodeFunctionData,
   hexToBytes,
   bytesToHex,
+  padHex,
   type Hex,
   type Address,
   type Hash,
@@ -33,7 +34,7 @@ import { loadBytecode, deployContract } from "../helpers/deploy.js";
 import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
 import { signFrameHash } from "../helpers/signing.js";
 import { verifyReceipt } from "../helpers/receipt.js";
-import { kernelAbi } from "../helpers/abis/kernel.js";
+import { kernelAbi, factoryAbi } from "../helpers/abis/kernel.js";
 import { walletAbi } from "../helpers/abis/coinbase.js";
 import { SIMPLE_VALIDATE_SELECTOR, simpleAccountAbi } from "../helpers/abis/simple.js";
 import { benchmarkTokenAbi } from "../helpers/abis/benchmark-token.js";
@@ -148,20 +149,53 @@ async function sendSimpleFrameTx(accountAddr: Address, senderCalldata: Hex): Pro
 // ─── Kernel8141 ─────────────────────────────────────────────
 
 async function deployKernel(): Promise<{ kernelAddr: Address; validatorAddr: Address }> {
-  const validatorBytecode = loadBytecode("ECDSAValidator");
+  const HOOK_INSTALLED = "0x0000000000000000000000000000000000000001" as Address;
+
   const { address: validatorAddr } = await deployContract(
-    walletClient, publicClient, validatorBytecode, 3_000_000n, "ECDSAValidator"
+    walletClient, publicClient, loadBytecode("ECDSAValidator"), 3_000_000n, "ECDSAValidator"
   );
 
-  const kernelBytecode = loadBytecode("Kernel8141");
-  const constructorArgs = encodeAbiParameters(
-    parseAbiParameters("address, bytes"),
-    [validatorAddr, encodeAbiParameters(parseAbiParameters("address"), [devAddr])]
+  const { address: implAddr } = await deployContract(
+    walletClient, publicClient, loadBytecode("Kernel8141"), 10_000_000n, "Kernel8141 (impl)"
   );
-  const deployData = (kernelBytecode + constructorArgs.slice(2)) as Hex;
-  const { address: kernelAddr } = await deployContract(
-    walletClient, publicClient, deployData, 10_000_000n, "Kernel8141"
+
+  const factoryBytecode = loadBytecode("Kernel8141Factory");
+  const factoryCtorArgs = encodeAbiParameters(parseAbiParameters("address"), [implAddr]);
+  const factoryDeployData = (factoryBytecode + factoryCtorArgs.slice(2)) as Hex;
+  const { address: factoryAddr } = await deployContract(
+    walletClient, publicClient, factoryDeployData, 5_000_000n, "Kernel8141Factory"
   );
+
+  const rootVId = `0x01${validatorAddr.slice(2)}` as Hex;
+  const salt = "0x0000000000000000000000000000000000000000000000000000000000000000" as Hex;
+  const initData = encodeFunctionData({
+    abi: kernelAbi,
+    functionName: "initialize",
+    args: [rootVId, HOOK_INSTALLED, devAddr, "0x", []],
+  });
+
+  const kernelAddr = await (publicClient as any).readContract({
+    address: factoryAddr,
+    abi: factoryAbi,
+    functionName: "getAddress",
+    args: [initData, salt],
+  }) as Address;
+
+  const createHash = await walletClient.sendTransaction({
+    chain: CHAIN_DEF,
+    to: factoryAddr,
+    data: encodeFunctionData({
+      abi: factoryAbi,
+      functionName: "createAccount",
+      args: [initData, salt],
+    }),
+    gas: 5_000_000n,
+    maxFeePerGas: 10_000_000_000n,
+    maxPriorityFeePerGas: 1_000_000_000n,
+  } as any);
+  const receipt = await waitForReceipt(publicClient, createHash);
+  if (receipt.status !== "0x1") throw new Error("Factory createAccount failed");
+
   return { kernelAddr, validatorAddr };
 }
 
@@ -349,11 +383,20 @@ async function main() {
     });
   };
 
-  // Kernel and Coinbase use their own ABIs for execute
+  // Kernel uses execute(bytes32 execMode, bytes executionCalldata)
+  // ExecMode: single + default = 0x0000...
+  // Single exec calldata: abi.encodePacked(target(20B), value(32B), calldata)
+  const EXEC_MODE_SINGLE = padHex("0x0000" as Hex, { size: 32, dir: "right" });
+  const encodeSingleExec = (target: Address, value: bigint, data: Hex = "0x"): Hex => {
+    const t = target.slice(2).toLowerCase().padStart(40, "0");
+    const v = value.toString(16).padStart(64, "0");
+    const d = data.slice(2);
+    return `0x${t}${v}${d}` as Hex;
+  };
   const kernelEthCalldata = encodeFunctionData({
     abi: kernelAbi,
     functionName: "execute",
-    args: [DEAD_ADDR, 1n, "0x"],
+    args: [EXEC_MODE_SINGLE, encodeSingleExec(DEAD_ADDR, 1n)],
   });
   const kernelErc20Calldata = (token: Address) => {
     const innerData = encodeFunctionData({
@@ -364,7 +407,7 @@ async function main() {
     return encodeFunctionData({
       abi: kernelAbi,
       functionName: "execute",
-      args: [token, 0n, innerData],
+      args: [EXEC_MODE_SINGLE, encodeSingleExec(token, 0n, innerData)],
     });
   };
 
