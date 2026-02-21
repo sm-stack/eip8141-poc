@@ -15,6 +15,7 @@ export const DEAD_ADDR =
   "0x000000000000000000000000000000000000dEaD" as Address;
 
 export const FRAME_TX_TYPE = 0x06;
+export const FRAME_MODE_DEFAULT = 0x00;
 export const FRAME_MODE_VERIFY = 0x01;
 export const FRAME_MODE_SENDER = 0x02;
 
