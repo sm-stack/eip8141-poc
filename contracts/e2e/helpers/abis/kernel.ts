@@ -149,6 +149,25 @@ export const kernelAbi = [
     outputs: [],
     stateMutability: "payable",
   },
+  {
+    type: "function",
+    name: "installValidations",
+    inputs: [
+      { name: "vIds", type: "bytes21[]" },
+      {
+        name: "configs",
+        type: "tuple[]",
+        components: [
+          { name: "nonce", type: "uint32" },
+          { name: "hook", type: "address" },
+        ],
+      },
+      { name: "validationData", type: "bytes[]" },
+      { name: "hookData", type: "bytes[]" },
+    ],
+    outputs: [],
+    stateMutability: "payable",
+  },
   // ── Introspection ───────────────────────────────────────────────
   {
     type: "function",
