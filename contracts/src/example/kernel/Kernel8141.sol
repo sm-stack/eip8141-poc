@@ -52,7 +52,8 @@ import {
     EXECTYPE_TRY,
     EXEC_MODE_DEFAULT,
     ERC1271_MAGICVALUE,
-    ERC1271_INVALID
+    ERC1271_INVALID,
+    MAGIC_VALUE_SIG_REPLAYABLE
 } from "./types/Constants8141.sol";
 
 /// @title Kernel8141
@@ -259,16 +260,14 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
         FrameTxLib.approveEmpty(scope);
     }
 
-    /// @notice Enable mode: install a new validator and validate in one VERIFY frame.
-    /// @dev EIP-8141 advantage: enable data is in VERIFY calldata, excluded from sigHash.
+    /// @notice Enable mode: verify enable data + validate in VERIFY frame (read-only).
+    /// @dev VERIFY frame verifies the enable signature and tx signature without sstore.
+    ///      A subsequent DEFAULT frame calls enableInstall() to perform the actual installation.
     ///
-    /// WARNING: This function is currently non-functional under EIP-8141.
-    /// The enable mode calls _installValidation(), _configureSelector(), and _grantAccess(),
-    /// all of which perform `sstore` (persistent storage writes). However, this function
-    /// executes inside a VERIFY frame, which is read-only (equivalent to STATICCALL).
-    /// Any `sstore` or `tstore` in a VERIFY frame causes an immediate revert.
-    /// To make enable mode work, the install logic would need to be moved to the
-    /// SENDER frame, or performed in a separate transaction.
+    ///      Frame pattern:
+    ///        Frame 0: VERIFY(kernel)  → validateWithEnable() — sig verify only (no sstore)
+    ///        Frame 1: DEFAULT(kernel) → enableInstall()      — performs sstore
+    ///        Frame 2: SENDER(kernel)  → execute()
     function validateWithEnable(bytes calldata enableData, bytes calldata sig, uint8 scope) external {
         _requireVerifyFrame();
         address account = FrameTxLib.txSender();
@@ -284,11 +283,44 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
             actualSig.length := sub(sig.length, 21)
         }
 
-        // Prepend enable data to the actual signature for _enableMode processing
-        // enableData is passed separately in EIP-8141 (VERIFY calldata, excluded from sigHash)
-        _validateFrameTx(VALIDATION_MODE_ENABLE, vId, account, sigHash, senderFrameIdx, actualSig);
+        // Handle replayable signatures
+        bool isReplayable;
+        if (actualSig.length >= 32 && bytes32(actualSig[0:32]) == MAGIC_VALUE_SIG_REPLAYABLE) {
+            actualSig = actualSig[32:];
+            isReplayable = true;
+        }
+
+        // View-only: verify enable signature (no sstore)
+        (ValidationData enableValidation, bytes calldata txSig) =
+            _verifyEnableMode(vId, enableData, isReplayable);
+
+        // Validate the actual transaction signature
+        ValidationType vType = ValidatorLib8141.getType(vId);
+        if (vType == VALIDATION_TYPE_VALIDATOR) {
+            IValidator8141 validator = ValidatorLib8141.getValidator(vId);
+            bool valid = validator.validateSignature(account, sigHash, txSig);
+            if (!valid) revert InvalidSignature();
+        } else if (vType == VALIDATION_TYPE_PERMISSION) {
+            _validatePermissionFrameTx(vId, account, sigHash, senderFrameIdx, txSig);
+        } else {
+            revert InvalidValidationType();
+        }
+
+        // Verify enableInstall DEFAULT frame exists between VERIFY and SENDER
+        _verifyEnableFrameExists(senderFrameIdx);
 
         FrameTxLib.approveEmpty(scope);
+    }
+
+    /// @notice DEFAULT frame entry point for enable mode installation.
+    /// @dev Performs the actual sstore operations that VERIFY cannot do.
+    ///      Must be called after a VERIFY frame has approved this account.
+    function enableInstall(bytes calldata enableData, ValidationId vId) external {
+        require(FrameTxLib.currentFrameMode() == FRAME_MODE_DEFAULT, "Not DEFAULT frame");
+        _requirePriorVerifyApproval();
+
+        // enableData format: [20B hook address][EnableDataFormat...]
+        _enableMode(vId, enableData, false);
     }
 
     /// @notice Permission-based validation (ISigner + IPolicy[]).
@@ -703,5 +735,19 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
             }
         }
         revert("No prior VERIFY approval");
+    }
+
+    /// @dev Verify that an enableInstall DEFAULT frame exists between VERIFY and SENDER.
+    function _verifyEnableFrameExists(uint256 senderFrameIdx) internal view {
+        uint256 current = FrameTxLib.currentFrameIndex();
+        for (uint256 i = current + 1; i < senderFrameIdx; i++) {
+            if (
+                FrameTxLib.frameMode(i) == FRAME_MODE_DEFAULT
+                    && FrameTxLib.frameTarget(i) == address(this)
+            ) {
+                return; // enableInstall DEFAULT frame found
+            }
+        }
+        revert("No enableInstall frame found");
     }
 }

@@ -466,6 +466,25 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
     /// WARNING: Currently non-functional. This is called from a VERIFY frame (read-only),
     /// but _enableValidationWithSig() writes to persistent storage via _installValidation(),
     /// _configureSelector(), and _grantAccess(). All `sstore` operations revert in VERIFY frames.
+    /// @dev View-only enable mode verification. Verifies enable signature without sstore.
+    ///      Used in VERIFY frame where state modification is prohibited.
+    function _verifyEnableMode(ValidationId vId, bytes calldata packedData, bool isReplayable)
+        internal
+        view
+        returns (ValidationData validationData, bytes calldata sig)
+    {
+        // packedData format: [20B hook address][EnableDataFormat...]
+        address hook = address(bytes20(packedData[0:20]));
+        EnableDataFormat calldata enableData;
+        assembly {
+            enableData := add(packedData.offset, 20)
+        }
+        (, bytes32 digest) = _enableDigest(vId, hook, enableData, isReplayable);
+        validationData = _verifyEnableSig(digest, enableData.enableSig);
+        return (validationData, enableData.txSig);
+    }
+
+    /// @dev Full enable mode with sstore. Called from DEFAULT frame (enableInstall).
     function _enableMode(ValidationId vId, bytes calldata packedData, bool isReplayable)
         internal
         returns (ValidationData validationData, bytes calldata sig)
