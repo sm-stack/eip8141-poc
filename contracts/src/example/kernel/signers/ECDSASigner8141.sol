@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {ECDSA} from "solady/utils/ECDSA.sol";
 import {ISigner8141} from "../interfaces/ISigner8141.sol";
 import {MODULE_TYPE_SIGNER, ERC1271_MAGICVALUE, ERC1271_INVALID} from "../types/Constants8141.sol";
 
@@ -26,12 +25,23 @@ contract ECDSASigner8141 is ISigner8141 {
         address expectedSigner = signers[msg.sender][id];
         if (expectedSigner == address(0)) return 1;
 
-        address recovered = ECDSA.recover(sigHash, signature);
-        if (recovered == expectedSigner) return 0;
+        // Use native ecrecover (solady ECDSA.recover assembly incompatible with EIP-8141 solc)
+        require(signature.length == 65, "bad sig len");
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := calldataload(signature.offset)
+            s := calldataload(add(signature.offset, 0x20))
+            v := byte(0, calldataload(add(signature.offset, 0x40)))
+        }
+        if (v < 27) v += 27;
+        address recovered = ecrecover(sigHash, v, r, s);
+        if (recovered != address(0) && recovered == expectedSigner) return 0;
 
-        bytes32 ethHash = ECDSA.toEthSignedMessageHash(sigHash);
-        recovered = ECDSA.recover(ethHash, signature);
-        return recovered == expectedSigner ? 0 : 1;
+        bytes32 ethHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", sigHash));
+        recovered = ecrecover(ethHash, v, r, s);
+        return (recovered != address(0) && recovered == expectedSigner) ? 0 : 1;
     }
 
     /// @inheritdoc ISigner8141
@@ -44,12 +54,23 @@ contract ECDSASigner8141 is ISigner8141 {
         address expectedSigner = signers[msg.sender][id];
         if (expectedSigner == address(0)) return ERC1271_INVALID;
 
-        address recovered = ECDSA.recover(hash, sig);
-        if (recovered == expectedSigner) return ERC1271_MAGICVALUE;
+        // Use native ecrecover (solady ECDSA.recover assembly incompatible with EIP-8141 solc)
+        require(sig.length == 65, "bad sig len");
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := calldataload(sig.offset)
+            s := calldataload(add(sig.offset, 0x20))
+            v := byte(0, calldataload(add(sig.offset, 0x40)))
+        }
+        if (v < 27) v += 27;
+        address recovered = ecrecover(hash, v, r, s);
+        if (recovered != address(0) && recovered == expectedSigner) return ERC1271_MAGICVALUE;
 
-        bytes32 ethHash = ECDSA.toEthSignedMessageHash(hash);
-        recovered = ECDSA.recover(ethHash, sig);
-        return recovered == expectedSigner ? ERC1271_MAGICVALUE : ERC1271_INVALID;
+        bytes32 ethHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", hash));
+        recovered = ecrecover(ethHash, v, r, s);
+        return (recovered != address(0) && recovered == expectedSigner) ? ERC1271_MAGICVALUE : ERC1271_INVALID;
     }
 
     // ── IModule8141 ─────────────────────────────────────────────────────
