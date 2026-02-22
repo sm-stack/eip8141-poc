@@ -224,6 +224,7 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
 
         // Decode ValidationId from signature prefix
         // sig format: [1B type][20B validator addr][actual sig]
+        require(sig.length >= 21, "Sig too short");
         ValidationId vId;
         bytes calldata actualSig;
         assembly {
@@ -275,6 +276,7 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
         uint256 senderFrameIdx = _findSenderFrameIndex();
 
         // Decode ValidationId from first 21 bytes of sig
+        require(sig.length >= 21, "Sig too short");
         ValidationId vId;
         bytes calldata actualSig;
         assembly {
@@ -333,6 +335,7 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
 
         // Decode PermissionId from signature
         // sig format: [0x02][4B permissionId][actual sig]
+        require(sig.length >= 5, "Sig too short");
         ValidationId vId;
         bytes calldata actualSig;
         assembly {
