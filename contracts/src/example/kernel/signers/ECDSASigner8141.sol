@@ -7,14 +7,42 @@ import {MODULE_TYPE_SIGNER, ERC1271_MAGICVALUE, ERC1271_INVALID} from "../types/
 /// @title ECDSASigner8141
 /// @notice ECDSA signer for the Kernel8141 permission system.
 /// @dev Each (account, permissionId) pair maps to one ECDSA signer address.
+///      Uses assembly-based storage to ensure STO-021 compliance in VERIFY frames:
+///      slot = keccak256(account || baseSlot(permissionId)), keeping account as the
+///      outermost keccak key so the node recognizes it as associated storage.
 contract ECDSASigner8141 is ISigner8141 {
     /// @dev Half of secp256k1 curve order, for EIP-2 signature malleability check.
     uint256 private constant _HALF_CURVE_ORDER = 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0;
 
-    // signers[account][permissionId] = signer address
-    mapping(address => mapping(bytes32 => address)) public signers;
-
     event SignerRegistered(address indexed account, bytes32 indexed id, address signer);
+
+    // ── STO-021 compliant storage ────────────────────────────────────────
+
+    /// @dev Returns the base slot for a given permissionId.
+    ///      Each permissionId gets its own virtual mapping(address => address).
+    function _baseSlot(bytes32 id) private pure returns (bytes32) {
+        return keccak256(abi.encode("ECDSASigner8141.signers", id));
+    }
+
+    /// @dev Read signer address: slot = keccak256(account || baseSlot(permId))
+    function _getSigner(address account, bytes32 id) internal view returns (address signer) {
+        bytes32 base = _baseSlot(id);
+        assembly {
+            mstore(0x00, account)
+            mstore(0x20, base)
+            signer := sload(keccak256(0x00, 0x40))
+        }
+    }
+
+    /// @dev Write signer address: slot = keccak256(account || baseSlot(permId))
+    function _setSigner(address account, bytes32 id, address signer) internal {
+        bytes32 base = _baseSlot(id);
+        assembly {
+            mstore(0x00, account)
+            mstore(0x20, base)
+            sstore(keccak256(0x00, 0x40), signer)
+        }
+    }
 
     // ── ISigner8141 ─────────────────────────────────────────────────────
 
@@ -25,7 +53,7 @@ contract ECDSASigner8141 is ISigner8141 {
         override
         returns (uint256)
     {
-        address expectedSigner = signers[msg.sender][id];
+        address expectedSigner = _getSigner(msg.sender, id);
         if (expectedSigner == address(0)) return 1;
 
         // Use native ecrecover (solady ECDSA.recover assembly incompatible with EIP-8141 solc)
@@ -56,7 +84,7 @@ contract ECDSASigner8141 is ISigner8141 {
         override
         returns (bytes4)
     {
-        address expectedSigner = signers[msg.sender][id];
+        address expectedSigner = _getSigner(msg.sender, id);
         if (expectedSigner == address(0)) return ERC1271_INVALID;
 
         // Use native ecrecover (solady ECDSA.recover assembly incompatible with EIP-8141 solc)
@@ -86,13 +114,13 @@ contract ECDSASigner8141 is ISigner8141 {
     function onInstall(bytes calldata data) external payable override {
         bytes32 id = bytes32(data[0:32]);
         address signer = address(bytes20(data[32:52]));
-        signers[msg.sender][id] = signer;
+        _setSigner(msg.sender, id, signer);
         emit SignerRegistered(msg.sender, id, signer);
     }
 
     function onUninstall(bytes calldata data) external payable override {
         bytes32 id = bytes32(data[0:32]);
-        delete signers[msg.sender][id];
+        _setSigner(msg.sender, id, address(0));
     }
 
     function isModuleType(uint256 typeID) external pure override returns (bool) {
