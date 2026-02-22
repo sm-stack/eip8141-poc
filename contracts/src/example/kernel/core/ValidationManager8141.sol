@@ -391,10 +391,10 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
         ) {
             revert PermissionNotAllowedForFrameTx();
         }
-        (ValidationData policyCheck, ISigner8141 signer) =
+        (ValidationData policyCheck, ISigner8141 signer, bytes calldata signerSig) =
             _checkFrameTxPolicy(pId, account, sigHash, senderFrameIndex, sig);
         validationData = _intersectValidationData(policyCheck, ValidationData.wrap(
-            signer.checkFrameTxSignature(bytes32(PermissionId.unwrap(pId)), account, sigHash, sig)
+            signer.checkFrameTxSignature(bytes32(PermissionId.unwrap(pId)), account, sigHash, signerSig)
         ));
     }
 
@@ -408,7 +408,7 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
         bytes32 sigHash,
         uint256 senderFrameIndex,
         bytes calldata sig
-    ) internal returns (ValidationData validationData, ISigner8141 signer) {
+    ) internal returns (ValidationData validationData, ISigner8141 signer, bytes calldata signerSig) {
         ValidationStorage storage state = _validationStorage();
         PolicyData[] storage policyData = state.permissionConfig[pId].policyData;
         bytes32 permId = bytes32(PermissionId.unwrap(pId));
@@ -421,7 +421,7 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
                 revert SignerPrefixNotPresent();
             }
             sig = sig[1:];
-            return (validationData, state.permissionConfig[pId].signer);
+            return (validationData, state.permissionConfig[pId].signer, sig);
         }
     }
 

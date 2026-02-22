@@ -9,6 +9,7 @@ import {
     ValidationType,
     PermissionId,
     ValidationData,
+    getValidationResult,
     PassFlag,
     CallType,
     ExecMode,
@@ -371,7 +372,10 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
         }
 
         ValidationData vd = _validateFrameTx(VALIDATION_MODE_DEFAULT, vId, account, sigHash, senderFrameIdx, actualSig);
-        if (ValidationData.unwrap(vd) != 0) revert InvalidSignature();
+        // Check only the result portion (bottom 160 bits) of ValidationData.
+        // _intersectValidationData always populates validUntil bits (making raw value != 0),
+        // so we must use getValidationResult() which extracts only the success/fail address.
+        if (getValidationResult(vd) != address(0)) revert InvalidSignature();
         _verifyHookFrames(vId);
 
         FrameTxLib.approveEmpty(scope);
