@@ -1,11 +1,11 @@
 /**
- * E2E: Protocol constraint tests
+ * E2E: Frame ordering and approval constraint tests
  *
- * Tests that EIP-8141 protocol-level constraints are enforced during block execution.
- * These transactions pass mempool validation (framepool only simulates VERIFY frames
- * individually, not inter-frame ordering) but fail during executeFrames().
+ * Tests that the framepool's static validation (validateFrameOrdering) and
+ * post-simulation validation (validateScopeOrdering) correctly reject
+ * transactions with invalid frame ordering or approval scope sequences.
  *
- * We verify failure by checking that no receipt is ever produced (expectNoReceipt).
+ * All tests expect eth_sendRawTransaction to return an RPC error.
  *
  * Usage: cd contracts && npx tsx e2e/negative/protocol-constraints.ts
  */
@@ -14,10 +14,8 @@ import {
   encodeAbiParameters,
   parseAbiParameters,
   hexToBytes,
-  formatEther,
   type Hex,
   type Address,
-  type Hash,
 } from "viem";
 import {
   CHAIN_ID,
@@ -26,18 +24,17 @@ import {
   FRAME_MODE_VERIFY,
   FRAME_MODE_SENDER,
 } from "../helpers/config.js";
-import { createTestClients, waitForReceipt, fundAccount } from "../helpers/client.js";
+import { createTestClients, fundAccount } from "../helpers/client.js";
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
 import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
 import { signFrameHash } from "../helpers/signing.js";
-import { expectNoReceipt, expectRpcRejection } from "../helpers/expect.js";
+import { expectRpcRejection } from "../helpers/expect.js";
 import { SIMPLE_VALIDATE_SELECTOR } from "../helpers/abis/simple.js";
 import {
   banner,
   sectionHeader,
   info,
   step,
-  success,
   testHeader,
   testPassed,
   summary,
@@ -46,9 +43,6 @@ import {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/**
- * Encode validate(uint8 v, bytes32 r, bytes32 s, uint8 scope) calldata.
- */
 function encodeValidate(v: number, r: bigint, s: bigint, scope: number): Uint8Array {
   const selectorBytes = hexToBytes(SIMPLE_VALIDATE_SELECTOR as Hex);
   const calldata = new Uint8Array(4 + 32 * 4);
@@ -63,23 +57,28 @@ function encodeValidate(v: number, r: bigint, s: bigint, scope: number): Uint8Ar
 }
 
 /**
- * Build frame tx params, sign with DEV_KEY, set VERIFY calldata, and send.
- * Returns the tx hash (does not wait for receipt).
+ * Sign frame tx, set VERIFY calldata, encode, and send expecting RPC rejection.
  */
-async function signAndSend(
+async function sendExpectingRejection(
   publicClient: any,
   params: FrameTxParams,
-  scope: number,
-  verifyFrameIndex = 0
-): Promise<Hash> {
+  verifyFrameIndices: { index: number; scope: number }[],
+  expectedError?: string
+): Promise<string> {
   const sigHash = computeSigHash(params);
   const { r, s, v } = signFrameHash(sigHash, DEV_KEY);
-  params.frames[verifyFrameIndex].data = encodeValidate(v, r, s, scope);
+
+  for (const { index, scope } of verifyFrameIndices) {
+    params.frames[index].data = encodeValidate(v, r, s, scope);
+  }
+
   const rawTx = encodeFrameTx(params);
-  return (await publicClient.request({
-    method: "eth_sendRawTransaction" as any,
-    params: [rawTx],
-  })) as Hash;
+  return expectRpcRejection(async () => {
+    await publicClient.request({
+      method: "eth_sendRawTransaction" as any,
+      params: [rawTx],
+    });
+  }, expectedError);
 }
 
 // ─── Main ───────────────────────────────────────────────────────────────────
@@ -89,7 +88,7 @@ async function main() {
   let passed = 0;
   const total = 4;
 
-  banner("Protocol Constraint Tests");
+  banner("Frame Ordering & Approval Constraint Tests");
   info(`Dev account: ${devAddr}`);
 
   // ── Deploy Simple8141Account ──────────────────────────────────────────
@@ -112,7 +111,8 @@ async function main() {
     return { nonce, gasFeeCap };
   }
 
-  // ── Test 1: SENDER frame before execution approval ────────────────────
+  // ── Test 1: SENDER frame before VERIFY ────────────────────────────────
+  // Caught by validateFrameOrdering: "SENDER frame before any VERIFY targeting sender"
 
   testHeader(1, "SENDER frame before VERIFY approval");
   try {
@@ -124,34 +124,27 @@ async function main() {
       gasTipCap: 1_000_000_000n,
       gasFeeCap: ctx.gasFeeCap,
       frames: [
-        // Frame 0: SENDER first (no prior approval)
         { mode: FRAME_MODE_SENDER, target: DEAD_ADDR as Address | null, gasLimit: 50_000n, data: new Uint8Array(0) },
-        // Frame 1: VERIFY with scope=2 (both)
         { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 200_000n, data: new Uint8Array(0) },
       ],
       blobFeeCap: 0n,
       blobHashes: [],
     };
 
-    // Sign and set VERIFY frame data (index 1)
-    const hash = await signAndSend(publicClient, params, 2, 1);
-    step(`Sent tx: ${hash}`);
-    step("Waiting for no receipt (protocol should reject)...");
-    await expectNoReceipt(publicClient, hash, 8_000);
+    const msg = await sendExpectingRejection(
+      publicClient, params,
+      [{ index: 1, scope: 2 }],
+      "sender frame before"
+    );
+    step(`Rejected: ${msg.slice(0, 120)}`);
     testPassed("SENDER before approval");
     passed++;
   } catch (err: any) {
-    // If the mempool itself rejects (RPC error), that's also acceptable
-    if (err.message?.includes("Expected RPC rejection")) {
-      console.error(`  FAILED: ${err.message}`);
-    } else {
-      step(`Rejected (mempool or protocol): ${err.message?.slice(0, 120)}`);
-      testPassed("SENDER before approval (rejected at mempool)");
-      passed++;
-    }
+    console.error(`  FAILED: ${err.message}`);
   }
 
   // ── Test 2: Payment approval before execution approval ────────────────
+  // Caught by validateScopeOrdering: "payment approval without prior execution approval"
 
   testHeader(2, "Payment approval before execution approval");
   try {
@@ -163,32 +156,27 @@ async function main() {
       gasTipCap: 1_000_000_000n,
       gasFeeCap: ctx.gasFeeCap,
       frames: [
-        // Frame 0: VERIFY with scope=1 (payment only, no execution approval first)
         { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 200_000n, data: new Uint8Array(0) },
-        // Frame 1: SENDER
         { mode: FRAME_MODE_SENDER, target: DEAD_ADDR as Address | null, gasLimit: 50_000n, data: new Uint8Array(0) },
       ],
       blobFeeCap: 0n,
       blobHashes: [],
     };
 
-    const hash = await signAndSend(publicClient, params, 1, 0);
-    step(`Sent tx: ${hash}`);
-    step("Waiting for no receipt (protocol should reject)...");
-    await expectNoReceipt(publicClient, hash, 8_000);
+    const msg = await sendExpectingRejection(
+      publicClient, params,
+      [{ index: 0, scope: 1 }],
+      "payment approval without prior execution"
+    );
+    step(`Rejected: ${msg.slice(0, 120)}`);
     testPassed("Payment before execution");
     passed++;
   } catch (err: any) {
-    if (err.message?.includes("Expected no receipt")) {
-      console.error(`  FAILED: ${err.message}`);
-    } else {
-      step(`Rejected (mempool or protocol): ${err.message?.slice(0, 120)}`);
-      testPassed("Payment before execution (rejected at mempool)");
-      passed++;
-    }
+    console.error(`  FAILED: ${err.message}`);
   }
 
   // ── Test 3: Missing payment approval ──────────────────────────────────
+  // Caught by validateScopeOrdering: "no payer approved among VERIFY frames"
 
   testHeader(3, "Missing payment approval (execution only)");
   try {
@@ -200,32 +188,27 @@ async function main() {
       gasTipCap: 1_000_000_000n,
       gasFeeCap: ctx.gasFeeCap,
       frames: [
-        // Frame 0: VERIFY with scope=0 (execution only, no payment)
         { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 200_000n, data: new Uint8Array(0) },
-        // Frame 1: SENDER
         { mode: FRAME_MODE_SENDER, target: DEAD_ADDR as Address | null, gasLimit: 50_000n, data: new Uint8Array(0) },
       ],
       blobFeeCap: 0n,
       blobHashes: [],
     };
 
-    const hash = await signAndSend(publicClient, params, 0, 0);
-    step(`Sent tx: ${hash}`);
-    step("Waiting for no receipt (protocol should reject)...");
-    await expectNoReceipt(publicClient, hash, 8_000);
+    const msg = await sendExpectingRejection(
+      publicClient, params,
+      [{ index: 0, scope: 0 }],
+      "no payer approved"
+    );
+    step(`Rejected: ${msg.slice(0, 120)}`);
     testPassed("Missing payment approval");
     passed++;
   } catch (err: any) {
-    if (err.message?.includes("Expected no receipt")) {
-      console.error(`  FAILED: ${err.message}`);
-    } else {
-      step(`Rejected (mempool or protocol): ${err.message?.slice(0, 120)}`);
-      testPassed("Missing payment (rejected at mempool)");
-      passed++;
-    }
+    console.error(`  FAILED: ${err.message}`);
   }
 
   // ── Test 4: Double execution approval ─────────────────────────────────
+  // Caught by validateScopeOrdering: "execution re-approval"
 
   testHeader(4, "Double execution approval");
   try {
@@ -237,47 +220,29 @@ async function main() {
       gasTipCap: 1_000_000_000n,
       gasFeeCap: ctx.gasFeeCap,
       frames: [
-        // Frame 0: VERIFY with scope=0 (execution)
         { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 200_000n, data: new Uint8Array(0) },
-        // Frame 1: VERIFY with scope=0 (execution again — duplicate!)
         { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 200_000n, data: new Uint8Array(0) },
-        // Frame 2: SENDER
         { mode: FRAME_MODE_SENDER, target: DEAD_ADDR as Address | null, gasLimit: 50_000n, data: new Uint8Array(0) },
       ],
       blobFeeCap: 0n,
       blobHashes: [],
     };
 
-    // Sign both VERIFY frames with scope=0
-    const sigHash = computeSigHash(params);
-    const { r, s, v } = signFrameHash(sigHash, DEV_KEY);
-    params.frames[0].data = encodeValidate(v, r, s, 0);
-    params.frames[1].data = encodeValidate(v, r, s, 0);
-    const rawTx = encodeFrameTx(params);
-
-    const hash = (await publicClient.request({
-      method: "eth_sendRawTransaction" as any,
-      params: [rawTx],
-    })) as Hash;
-
-    step(`Sent tx: ${hash}`);
-    step("Waiting for no receipt (protocol should reject)...");
-    await expectNoReceipt(publicClient, hash, 8_000);
+    const msg = await sendExpectingRejection(
+      publicClient, params,
+      [{ index: 0, scope: 0 }, { index: 1, scope: 0 }],
+      "re-approval"
+    );
+    step(`Rejected: ${msg.slice(0, 120)}`);
     testPassed("Double execution approval");
     passed++;
   } catch (err: any) {
-    if (err.message?.includes("Expected no receipt")) {
-      console.error(`  FAILED: ${err.message}`);
-    } else {
-      step(`Rejected (mempool or protocol): ${err.message?.slice(0, 120)}`);
-      testPassed("Double execution approval (rejected at mempool)");
-      passed++;
-    }
+    console.error(`  FAILED: ${err.message}`);
   }
 
   // ── Summary ──────────────────────────────────────────────────────────
 
-  summary("Protocol Constraints", passed, total);
+  summary("Frame Ordering & Approval Constraints", passed, total);
   if (passed < total) process.exit(1);
 }
 
