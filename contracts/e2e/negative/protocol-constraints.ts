@@ -86,7 +86,7 @@ async function sendExpectingRejection(
 async function main() {
   const { publicClient, walletClient, devAddr } = createTestClients();
   let passed = 0;
-  const total = 4;
+  const total = 5;
 
   banner("Frame Ordering & Approval Constraint Tests");
   info(`Dev account: ${devAddr}`);
@@ -235,6 +235,62 @@ async function main() {
     );
     step(`Rejected: ${msg.slice(0, 120)}`);
     testPassed("Double execution approval");
+    passed++;
+  } catch (err: any) {
+    console.error(`  FAILED: ${err.message}`);
+  }
+
+  // ── Test 5: APPROVE from inner call (ADDRESS != frame.target) ───────
+  // The account validates the signature correctly, then delegates APPROVE
+  // to a separate relay contract via staticcall. The relay's ADDRESS differs
+  // from frame.target (the account), so opApprove rejects the call.
+  // The VERIFY frame reverts → no approval → tx rejected.
+
+  testHeader(5, "APPROVE from inner call (ADDRESS != frame.target)");
+  try {
+    // Deploy ApproveRelay
+    const relayBytecode = loadBytecode("ApproveRelay");
+    const { address: relayAddr } = await deployContract(
+      walletClient, publicClient, relayBytecode, 500_000n, "ApproveRelay"
+    );
+
+    // Deploy InnerApproveAccount(owner, relay)
+    const innerBytecode = loadBytecode("InnerApproveAccount");
+    const innerArgs = encodeAbiParameters(
+      parseAbiParameters("address, address"),
+      [devAddr, relayAddr]
+    );
+    const innerDeployData = (innerBytecode + innerArgs.slice(2)) as Hex;
+    const { address: innerAddr } = await deployContract(
+      walletClient, publicClient, innerDeployData, 1_000_000n, "InnerApproveAccount"
+    );
+
+    // Fund account
+    await fundAccount(walletClient, publicClient, innerAddr);
+
+    const innerNonce = BigInt(await publicClient.getTransactionCount({ address: innerAddr }));
+    const innerBlock = await publicClient.getBlock();
+    const innerGasFeeCap = innerBlock.baseFeePerGas! + 2_000_000_000n;
+    const params: FrameTxParams = {
+      chainId: BigInt(CHAIN_ID),
+      nonce: innerNonce,
+      sender: innerAddr,
+      gasTipCap: 1_000_000_000n,
+      gasFeeCap: innerGasFeeCap,
+      frames: [
+        { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 200_000n, data: new Uint8Array(0) },
+        { mode: FRAME_MODE_SENDER, target: DEAD_ADDR as Address | null, gasLimit: 50_000n, data: new Uint8Array(0) },
+      ],
+      blobFeeCap: 0n,
+      blobHashes: [],
+    };
+
+    const msg = await sendExpectingRejection(
+      publicClient, params,
+      [{ index: 0, scope: 2 }]
+    );
+    step(`Rejected: ${msg.slice(0, 120)}`);
+    testPassed("Inner call APPROVE rejected");
     passed++;
   } catch (err: any) {
     console.error(`  FAILED: ${err.message}`);
