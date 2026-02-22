@@ -693,8 +693,9 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
 
     /// @dev Verify that required hook DEFAULT frames are present in the transaction.
     ///      If a validator has a hook configured (not sentinel), a DEFAULT frame targeting
-    ///      that hook must exist before the SENDER frame. If the hook frame already executed
-    ///      (before current VERIFY), its status must be SUCCESS (1).
+    ///      that hook must exist in the transaction. This is a structural check only —
+    ///      runtime status cannot be verified because during mempool VERIFY simulation,
+    ///      DEFAULT frames have not yet executed (FrameResults are zero-initialized).
     function _verifyHookFrames(ValidationId vId) internal view {
         IHook8141 hook = _validationStorage().validationConfig[vId].hook;
 
@@ -710,10 +711,6 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
                 FrameTxLib.frameMode(i) == FRAME_MODE_DEFAULT
                     && FrameTxLib.frameTarget(i) == address(hook)
             ) {
-                // If hook frame already executed (before VERIFY), check it succeeded
-                if (i < current) {
-                    require(FrameTxLib.frameStatus(i) == 1, "Hook frame failed");
-                }
                 return; // Hook frame found
             }
         }
