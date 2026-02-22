@@ -28,11 +28,16 @@ import { secp256k1 } from "@noble/curves/secp256k1";
 import {
   CHAIN_ID,
   DEV_KEY,
-  DEAD_ADDR,
   CHAIN_DEF,
   FRAME_MODE_VERIFY,
   FRAME_MODE_SENDER,
 } from "../helpers/config.js";
+
+// Per-account recipient addresses to avoid SSTORE zero→non-zero bias
+const DEAD_SIMPLE   = "0x000000000000000000000000000000000000dEa1" as Address;
+const DEAD_KERNEL   = "0x000000000000000000000000000000000000dEa2" as Address;
+const DEAD_COINBASE = "0x000000000000000000000000000000000000dEa3" as Address;
+const DEAD_LIGHT    = "0x000000000000000000000000000000000000dEa4" as Address;
 import { createTestClients, waitForReceipt, fundAccount } from "../helpers/client.js";
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
 import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
@@ -490,11 +495,11 @@ async function main() {
       args: [target, 1n, "0x"],
     });
 
-  const erc20TransferCalldata = (token: Address) => {
+  const erc20TransferCalldata = (token: Address, recipient: Address) => {
     const innerData = encodeFunctionData({
       abi: benchmarkTokenAbi,
       functionName: "transfer",
-      args: [DEAD_ADDR, 1_000_000_000_000_000_000n],
+      args: [recipient, 1_000_000_000_000_000_000n],
     });
     return encodeFunctionData({
       abi: simpleAccountAbi,
@@ -516,13 +521,13 @@ async function main() {
   const kernelEthCalldata = encodeFunctionData({
     abi: kernelAbi,
     functionName: "execute",
-    args: [EXEC_MODE_SINGLE, encodeSingleExec(DEAD_ADDR, 1n)],
+    args: [EXEC_MODE_SINGLE, encodeSingleExec(DEAD_KERNEL, 1n)],
   });
   const kernelErc20Calldata = (token: Address) => {
     const innerData = encodeFunctionData({
       abi: benchmarkTokenAbi,
       functionName: "transfer",
-      args: [DEAD_ADDR, 1_000_000_000_000_000_000n],
+      args: [DEAD_KERNEL, 1_000_000_000_000_000_000n],
     });
     return encodeFunctionData({
       abi: kernelAbi,
@@ -534,13 +539,13 @@ async function main() {
   const coinbaseEthCalldata = encodeFunctionData({
     abi: walletAbi,
     functionName: "execute",
-    args: [DEAD_ADDR, 1n, "0x"],
+    args: [DEAD_COINBASE, 1n, "0x"],
   });
   const coinbaseErc20Calldata = (token: Address) => {
     const innerData = encodeFunctionData({
       abi: benchmarkTokenAbi,
       functionName: "transfer",
-      args: [DEAD_ADDR, 1_000_000_000_000_000_000n],
+      args: [DEAD_COINBASE, 1_000_000_000_000_000_000n],
     });
     return encodeFunctionData({
       abi: walletAbi,
@@ -552,13 +557,13 @@ async function main() {
   const lightEthCalldata = encodeFunctionData({
     abi: lightWalletAbi,
     functionName: "execute",
-    args: [DEAD_ADDR, 1n, "0x"],
+    args: [DEAD_LIGHT, 1n, "0x"],
   });
   const lightErc20Calldata = (token: Address) => {
     const innerData = encodeFunctionData({
       abi: benchmarkTokenAbi,
       functionName: "transfer",
-      args: [DEAD_ADDR, 1_000_000_000_000_000_000n],
+      args: [DEAD_LIGHT, 1_000_000_000_000_000_000n],
     });
     return encodeFunctionData({
       abi: lightWalletAbi,
@@ -586,13 +591,13 @@ async function main() {
   success("1,000 BMK minted");
 
   step("ETH transfer...");
-  const simpleEthReceipt = await sendSimpleFrameTx(simpleAddr, ethTransferCalldata(DEAD_ADDR));
+  const simpleEthReceipt = await sendSimpleFrameTx(simpleAddr, ethTransferCalldata(DEAD_SIMPLE));
   verifyReceipt(simpleEthReceipt, simpleAddr);
   const simpleEth = extractGas(simpleEthReceipt);
   success(`Total: ${fmtGas(simpleEth.totalGas)}`);
 
   step("ERC20 transfer...");
-  const simpleErc20Receipt = await sendSimpleFrameTx(simpleAddr, erc20TransferCalldata(tokenAddr));
+  const simpleErc20Receipt = await sendSimpleFrameTx(simpleAddr, erc20TransferCalldata(tokenAddr, DEAD_SIMPLE));
   verifyReceipt(simpleErc20Receipt, simpleAddr);
   const simpleErc20 = extractGas(simpleErc20Receipt);
   success(`Total: ${fmtGas(simpleErc20.totalGas)}`);
