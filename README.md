@@ -18,6 +18,7 @@ A reference implementation for [EIP-8141](https://github.com/ethereum/EIPs/pull/
 │   │   └── example/                  # Modular account examples
 │   │       ├── Kernel8141.sol                # Kernel-style modular account
 │   │       ├── CoinbaseSmartWallet8141.sol   # Coinbase-style smart wallet
+│   │       ├── LightAccount8141.sol         # Alchemy LightAccount port
 │   │       ├── validators/                   # ECDSA, SessionKey validators
 │   │       ├── executors/                    # Default, Batch executors
 │   │       ├── hooks/                        # SpendingLimit, SessionKeyPermission hooks
@@ -86,25 +87,28 @@ make e2e-kernel-validator  # Kernel8141 validator swap
 make e2e-hooked            # SpendingLimitHook
 make e2e-coinbase-ecdsa    # CoinbaseSmartWallet ECDSA
 make e2e-coinbase-webauthn # CoinbaseSmartWallet WebAuthn
+make e2e-light-account     # LightAccount ECDSA
 make benchmark             # Gas benchmarks
 ```
 
 ## Gas Benchmark
 
-EIP-8141 frame transactions achieve **~30–50% gas savings** compared to ERC-4337 UserOperations by eliminating the application-layer EntryPoint overhead. Validation and execution happen as native protocol operations (VERIFY/SENDER frames) rather than nested contract calls.
+EIP-8141 frame transactions achieve significant gas savings compared to ERC-4337 UserOperations by eliminating the application-layer EntryPoint overhead. Validation and execution happen as native protocol operations (VERIFY/SENDER frames) rather than nested contract calls.
 
 Run `make benchmark` against the local devnet to reproduce:
 
 | Account | Operation | Total Gas | Verify | Sender |
 |---|---|---:|---:|---:|
-| Simple8141 | ETH transfer | ~47,000 | ~26,000 | ~21,000 |
-| Simple8141 | ERC20 transfer | ~52,000 | ~26,000 | ~26,000 |
-| Kernel8141 | ETH transfer | ~55,000 | ~34,000 | ~21,000 |
-| Kernel8141 | ERC20 transfer | ~60,000 | ~34,000 | ~26,000 |
-| Coinbase8141 | ETH transfer | ~58,000 | ~37,000 | ~21,000 |
-| Coinbase8141 | ERC20 transfer | ~63,000 | ~37,000 | ~26,000 |
+| Simple8141 | ETH transfer | 33,005 | 5,854 | 9,803 |
+| Simple8141 | ERC20 transfer | 56,772 | 5,854 | 32,814 |
+| Kernel8141 | ETH transfer | 49,943 | 20,677 | 11,486 |
+| Kernel8141 | ERC20 transfer | 73,445 | 20,677 | 34,384 |
+| Coinbase | ETH transfer | 46,253 | 17,316 | 10,869 |
+| Coinbase | ERC20 transfer | 70,130 | 17,316 | 34,002 |
+| LightAccount | ETH transfer | 39,539 | 11,506 | 10,405 |
+| LightAccount | ERC20 transfer | 63,425 | 11,506 | 33,535 |
 
-> Gas numbers are approximate and measured on the local devnet. Actual values may vary depending on the EVM implementation and compiler optimizations.
+> These numbers include first-time costs: account creation for the ETH recipient (G_newaccount = 25,000 gas) and zero-to-non-zero SSTORE for the ERC20 recipient balance (20,000 gas). In steady-state (sending to existing accounts with non-zero balances), total gas is roughly **~25,000 lower for ETH** and **~17,000 lower for ERC20** transfers. Each account uses a separate recipient address to ensure fair comparison regardless of benchmark execution order.
 
 ## Disclaimer
 
