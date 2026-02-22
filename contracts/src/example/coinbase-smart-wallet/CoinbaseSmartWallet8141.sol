@@ -495,11 +495,14 @@ contract CoinbaseSmartWallet8141 is UUPSUpgradeable, Receiver {
 
     // ── Internal: Frame TX Helpers ────────────────────────────────────
 
-    function _findSenderFrameIndex() internal pure returns (uint256 idx) {
+    function _findSenderFrameIndex() internal view returns (uint256 idx) {
         uint256 count = FrameTxLib.frameCount();
         uint256 current = FrameTxLib.currentFrameIndex();
         for (idx = current + 1; idx < count; idx++) {
-            if (FrameTxLib.frameMode(idx) == FRAME_MODE_SENDER) {
+            if (
+                FrameTxLib.frameMode(idx) == FRAME_MODE_SENDER
+                    && FrameTxLib.frameTarget(idx) == address(this)
+            ) {
                 return idx;
             }
         }
