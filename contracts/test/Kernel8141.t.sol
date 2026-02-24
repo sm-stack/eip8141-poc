@@ -144,7 +144,7 @@ contract Kernel8141Test is Test {
     function test_installModule_revertsIfNotSelfOrOwner() public {
         ECDSAValidator newValidator = new ECDSAValidator();
         vm.prank(address(0xbad));
-        vm.expectRevert("ECDSAValidator: sender is not owner");
+        vm.expectRevert(ECDSAValidator.NotOwner.selector);
         kernel.installModule(1, address(newValidator), abi.encodePacked(address(1), abi.encode("", "", "")));
     }
 

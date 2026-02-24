@@ -27,6 +27,8 @@ contract ECDSAValidator is IValidator8141, IHook8141 {
     mapping(address => ECDSAValidatorStorage) public ecdsaValidatorStorage;
 
     error InvalidOwner();
+    error InvalidSignatureLength();
+    error NotOwner();
 
     event OwnerRegistered(address indexed kernel, address indexed owner);
 
@@ -67,7 +69,7 @@ contract ECDSAValidator is IValidator8141, IHook8141 {
     {
         address owner = ecdsaValidatorStorage[account].owner;
         // Use Solidity built-in ecrecover instead of solady ECDSA.recover
-        require(signature.length == 65, "bad sig len");
+        if (signature.length != 65) revert InvalidSignatureLength();
         bytes32 r;
         bytes32 s;
         uint8 v;
@@ -97,7 +99,7 @@ contract ECDSAValidator is IValidator8141, IHook8141 {
     {
         address owner = ecdsaValidatorStorage[msg.sender].owner;
         // Use native ecrecover (solady ECDSA.recover assembly incompatible with EIP-8141 solc)
-        require(sig.length == 65, "bad sig len");
+        if (sig.length != 65) revert InvalidSignatureLength();
         bytes32 r;
         bytes32 s;
         uint8 v;
@@ -130,7 +132,7 @@ contract ECDSAValidator is IValidator8141, IHook8141 {
         override
         returns (bytes memory)
     {
-        require(msgSender == ecdsaValidatorStorage[msg.sender].owner, "ECDSAValidator: sender is not owner");
+        if (msgSender != ecdsaValidatorStorage[msg.sender].owner) revert NotOwner();
         return hex"";
     }
 

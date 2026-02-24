@@ -5,6 +5,8 @@ import {IHook8141} from "../interfaces/IHook8141.sol";
 import {MODULE_TYPE_HOOK} from "../types/Constants8141.sol";
 import {FrameTxLib} from "../../../FrameTxLib.sol";
 
+uint8 constant FRAME_MODE_SENDER = 2;
+
 /// @title SpendingLimitHook
 /// @notice Enforces daily spending limits as a DEFAULT frame target.
 /// @dev Frame-native hook: called directly in a DEFAULT frame, uses TXPARAM
@@ -27,6 +29,7 @@ contract SpendingLimitHook is IHook8141 {
 
     error DailyLimitExceeded(uint256 requested, uint256 available);
     error InvalidDailyLimit();
+    error NoSenderFrame();
 
     event DailyLimitSet(address indexed account, uint256 dailyLimit);
     event SpendingRecorded(address indexed account, uint256 amount, uint256 totalToday);
@@ -133,9 +136,9 @@ contract SpendingLimitHook is IHook8141 {
     function _findSenderFrame() internal pure returns (uint256) {
         uint256 count = FrameTxLib.frameCount();
         for (uint256 i = 0; i < count; i++) {
-            if (FrameTxLib.frameMode(i) == 2) return i; // SENDER mode
+            if (FrameTxLib.frameMode(i) == FRAME_MODE_SENDER) return i;
         }
-        revert("No SENDER frame");
+        revert NoSenderFrame();
     }
 
     /// @dev Extract the total ETH value from a SENDER frame's execute() calldata.

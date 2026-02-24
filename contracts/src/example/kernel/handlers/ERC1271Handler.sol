@@ -3,17 +3,12 @@ pragma solidity ^0.8.28;
 
 import {IFallbackHandler} from "../../../interfaces/IFallbackHandler.sol";
 import {IValidator8141} from "../interfaces/IValidator8141.sol";
+import {ERC1271_MAGICVALUE} from "../types/Constants8141.sol";
 
 /// @title ERC1271Handler
 /// @notice Fallback handler for ERC-1271 signature validation.
 /// @dev Delegates signature validation to the account's root validator.
 contract ERC1271Handler is IFallbackHandler {
-    // ERC-1271 magic value
-    bytes4 internal constant MAGICVALUE = 0x1626ba7e;
-
-    // isValidSignature(bytes32,bytes) selector
-    bytes4 internal constant ERC1271_SELECTOR = 0x1626ba7e;
-
     mapping(address => IValidator8141) public accountValidators;
 
     error InvalidSelector(bytes4 selector);
@@ -26,7 +21,7 @@ contract ERC1271Handler is IFallbackHandler {
         external
         returns (bytes memory)
     {
-        if (selector != ERC1271_SELECTOR) {
+        if (selector != ERC1271_MAGICVALUE) {
             revert InvalidSelector(selector);
         }
 
@@ -41,7 +36,7 @@ contract ERC1271Handler is IFallbackHandler {
         // Validate signature using the validator
         bool valid = validator.validateSignature(msg.sender, hash, signature);
 
-        bytes4 result = valid ? MAGICVALUE : bytes4(0);
+        bytes4 result = valid ? ERC1271_MAGICVALUE : bytes4(0);
         return abi.encode(result);
     }
 

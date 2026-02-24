@@ -237,20 +237,3 @@ export const factoryAbi = [
     stateMutability: "view",
   },
 ] as const;
-
-export const sessionKeyValidatorAbi = [
-  {
-    type: "function",
-    name: "addSessionKey",
-    inputs: [
-      { name: "sessionKey", type: "address" },
-      { name: "validAfter", type: "uint48" },
-      { name: "validUntil", type: "uint48" },
-      { name: "spendingLimit", type: "uint256" },
-      { name: "allowedSelectors", type: "bytes4[]" },
-      { name: "allowedTargets", type: "address[]" },
-    ],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-] as const;

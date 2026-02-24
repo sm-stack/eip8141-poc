@@ -62,13 +62,8 @@ bytes32 constant ERC1967_IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98
 
 // ── EIP-712 type hashes ─────────────────────────────────────────────
 bytes32 constant KERNEL_WRAPPER_TYPE_HASH = keccak256("Kernel8141(bytes32 hash)");
+/// @dev keccak256("Enable(bytes21 validationId,uint32 nonce,address hook,bytes validatorData,bytes hookData,bytes selectorData,bytes enableData)")
 bytes32 constant ENABLE_TYPE_HASH = 0xb17ab1224aca0d4255ef8161acaf2ac121b8faa32a4b2258c912cc5f8308c505;
-
-// ── Transient storage slots (EIP-8141 native) ───────────────────────
-/// @dev Hook address passed from VERIFY frame to SENDER frame
-bytes32 constant EXECUTION_HOOK_TSLOT = 0xa1dc5dbb3da4e3e7a6e4e5b6c8a3e97d2f6b1c0e9d8a7f6e5d4c3b2a19080700;
-/// @dev Validation ID passed from VERIFY frame to SENDER frame
-bytes32 constant VALIDATION_ID_TSLOT = 0xb2ed6ecc4eb5f4f8b7f5e6d7c9b4fa8e307c2d1f0e9b8a706f5e4d3c2b1a0908;
 
 // ── Nonce management ────────────────────────────────────────────────
 uint32 constant MAX_NONCE_INCREMENT_SIZE = 10;
@@ -78,7 +73,6 @@ bytes32 constant MAGIC_VALUE_SIG_REPLAYABLE = keccak256("kernel.replayable.signa
 
 // ── Validation data constants ───────────────────────────────────────
 uint256 constant SIG_VALIDATION_FAILED_UINT = 1;
-uint256 constant SIG_VALIDATION_SUCCESS_UINT = 0;
 ValidationData constant SIG_VALIDATION_FAILED = ValidationData.wrap(SIG_VALIDATION_FAILED_UINT);
 
 // ── ERC-1271 ────────────────────────────────────────────────────────

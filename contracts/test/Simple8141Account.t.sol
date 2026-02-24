@@ -7,10 +7,9 @@ import {Simple8141Account} from "../src/Simple8141Account.sol";
 contract Simple8141AccountTest is Test {
     Simple8141Account account;
     address owner;
-    uint256 ownerKey;
 
     function setUp() public {
-        (owner, ownerKey) = makeAddrAndKey("owner");
+        (owner,) = makeAddrAndKey("owner");
         account = new Simple8141Account(owner);
     }
 

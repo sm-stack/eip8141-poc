@@ -9,7 +9,8 @@ import {
     SELECTOR_STORAGE_SLOT,
     CALLTYPE_SINGLE,
     CALLTYPE_DELEGATECALL,
-    MODULE_TYPE_FALLBACK
+    MODULE_TYPE_FALLBACK,
+    HOOK_ONLY_ENTRYPOINT
 } from "../types/Constants8141.sol";
 
 /// @title SelectorManager8141
@@ -48,7 +49,7 @@ abstract contract SelectorManager8141 {
     ///      If hook is address(0), it is upgraded to HOOK_ONLY_ENTRYPOINT sentinel.
     function _installSelector(bytes4 selector, address target, IHook8141 hook, bytes calldata selectorData) internal {
         if (address(hook) == address(0)) {
-            hook = IHook8141(address(0xFFfFfFffFFfffFFfFFfFFFFFffFFFffffFfFFFfF));
+            hook = IHook8141(HOOK_ONLY_ENTRYPOINT);
         }
         SelectorConfig storage ss = _selectorConfig(selector);
         CallType callType = CallType.wrap(bytes1(selectorData[0]));

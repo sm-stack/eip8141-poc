@@ -134,7 +134,7 @@ contract ECDSAValidatorTest is Test {
 
     function test_preCheck_revertsNonOwner() public {
         vm.prank(account);
-        vm.expectRevert("ECDSAValidator: sender is not owner");
+        vm.expectRevert(ECDSAValidator.NotOwner.selector);
         validator.preCheck(address(0xbad), 0, "");
     }
 

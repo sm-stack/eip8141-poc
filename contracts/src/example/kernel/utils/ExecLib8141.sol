@@ -7,15 +7,16 @@ import {
     CALLTYPE_BATCH,
     CALLTYPE_DELEGATECALL,
     EXECTYPE_DEFAULT,
-    EXECTYPE_TRY,
-    EXEC_MODE_DEFAULT
+    EXECTYPE_TRY
 } from "../types/Constants8141.sol";
 import {Execution} from "../types/Structs8141.sol";
 
 /// @title ExecLib8141
 /// @notice Execution helper library for Kernel8141 (ported from Kernel v3 ExecLib).
 library ExecLib8141 {
-    error ExecutionFailed();
+    error UnsupportedCallType();
+    error UnsupportedExecType();
+    error DelegatecallFailed();
 
     event TryExecuteUnsuccessful(uint256 batchExecutionIndex, bytes result);
 
@@ -29,7 +30,7 @@ library ExecLib8141 {
             Execution[] calldata executions = decodeBatch(executionCalldata);
             if (execType == EXECTYPE_DEFAULT) returnData = _execute(executions);
             else if (execType == EXECTYPE_TRY) returnData = _tryExecute(executions);
-            else revert("Unsupported");
+            else revert UnsupportedExecType();
         } else if (callType == CALLTYPE_SINGLE) {
             (address target, uint256 value, bytes calldata callData) = decodeSingle(executionCalldata);
             returnData = new bytes[](1);
@@ -40,7 +41,7 @@ library ExecLib8141 {
                 (success, returnData[0]) = _tryExecute(target, value, callData);
                 if (!success) emit TryExecuteUnsuccessful(0, returnData[0]);
             } else {
-                revert("Unsupported");
+                revert UnsupportedExecType();
             }
         } else if (callType == CALLTYPE_DELEGATECALL) {
             returnData = new bytes[](1);
@@ -50,12 +51,12 @@ library ExecLib8141 {
             if (execType == EXECTYPE_TRY) {
                 if (!success) emit TryExecuteUnsuccessful(0, returnData[0]);
             } else if (execType == EXECTYPE_DEFAULT) {
-                if (!success) revert("Delegatecall failed");
+                if (!success) revert DelegatecallFailed();
             } else {
-                revert("Unsupported");
+                revert UnsupportedExecType();
             }
         } else {
-            revert("Unsupported");
+            revert UnsupportedCallType();
         }
     }
 
@@ -149,22 +150,6 @@ library ExecLib8141 {
         }
     }
 
-    function encode(CallType callType, ExecType execType, ExecModeSelector mode, ExecModePayload payload)
-        internal
-        pure
-        returns (ExecMode)
-    {
-        return ExecMode.wrap(
-            bytes32(abi.encodePacked(callType, execType, bytes4(0), ExecModeSelector.unwrap(mode), payload))
-        );
-    }
-
-    function getCallType(ExecMode mode) internal pure returns (CallType calltype) {
-        assembly {
-            calltype := mode
-        }
-    }
-
     function decodeSingle(bytes calldata executionCalldata)
         internal
         pure
@@ -173,14 +158,6 @@ library ExecLib8141 {
         target = address(bytes20(executionCalldata[0:20]));
         value = uint256(bytes32(executionCalldata[20:52]));
         callData = executionCalldata[52:];
-    }
-
-    function encodeSingle(address target, uint256 value, bytes memory callData)
-        internal
-        pure
-        returns (bytes memory)
-    {
-        return abi.encodePacked(target, value, callData);
     }
 
     function decodeBatch(bytes calldata executionCalldata)
@@ -195,10 +172,6 @@ library ExecLib8141 {
         }
     }
 
-    function encodeBatch(Execution[] memory executions) internal pure returns (bytes memory callData) {
-        callData = abi.encode(executions);
-    }
-
     function decodeDelegate(bytes calldata executionCalldata)
         internal
         pure
@@ -206,33 +179,6 @@ library ExecLib8141 {
     {
         delegate = address(bytes20(executionCalldata[0:20]));
         callData = executionCalldata[20:];
-    }
-
-    function doFallback2771Static(address fallbackHandler)
-        internal
-        view
-        returns (bool success, bytes memory result)
-    {
-        assembly {
-            function allocate(length) -> pos {
-                pos := mload(0x40)
-                mstore(0x40, add(pos, length))
-            }
-
-            let calldataPtr := allocate(calldatasize())
-            calldatacopy(calldataPtr, 0, calldatasize())
-
-            let senderPtr := allocate(20)
-            mstore(senderPtr, shl(96, caller()))
-
-            success := staticcall(gas(), fallbackHandler, calldataPtr, add(calldatasize(), 20), 0, 0)
-
-            result := mload(0x40)
-            mstore(result, returndatasize())
-            let o := add(result, 0x20)
-            returndatacopy(o, 0x00, returndatasize())
-            mstore(0x40, add(o, returndatasize()))
-        }
     }
 
     function doFallback2771Call(address target) internal returns (bool success, bytes memory result) {

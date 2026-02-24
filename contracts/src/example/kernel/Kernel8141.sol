@@ -48,7 +48,6 @@ import {
     CALLTYPE_SINGLE,
     CALLTYPE_BATCH,
     CALLTYPE_DELEGATECALL,
-    CALLTYPE_STATIC,
     EXECTYPE_DEFAULT,
     EXECTYPE_TRY,
     EXEC_MODE_DEFAULT,
@@ -120,7 +119,7 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
 
     constructor() {
         // Sentinel: mark implementation as initialized to prevent direct use
-        _validationStorage().rootValidator = ValidationId.wrap(bytes21(abi.encodePacked(hex"deadbeef")));
+        _validationStorage().rootValidator = ValidationId.wrap(bytes21(uint168(0xdead)));
     }
 
     // ── Access control ──────────────────────────────────────────────────
@@ -576,7 +575,7 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
     // ── Introspection ───────────────────────────────────────────────────
 
     function supportsModule(uint256 moduleTypeId) external pure override returns (bool) {
-        return moduleTypeId > 0 && moduleTypeId < 7;
+        return moduleTypeId > 0 && moduleTypeId <= MODULE_TYPE_SIGNER;
     }
 
     function isModuleInstalled(uint256 moduleType, address module, bytes calldata additionalContext)
@@ -607,7 +606,6 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
             ExecLib8141.decode(mode);
         if (
             callType != CALLTYPE_BATCH && callType != CALLTYPE_SINGLE && callType != CALLTYPE_DELEGATECALL
-                && callType != CALLTYPE_STATIC
         ) {
             return false;
         }

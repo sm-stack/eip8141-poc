@@ -6,6 +6,8 @@ import {SessionKeyValidator} from "../validators/SessionKeyValidator.sol";
 import {MODULE_TYPE_HOOK} from "../types/Constants8141.sol";
 import {FrameTxLib} from "../../../FrameTxLib.sol";
 
+uint8 constant FRAME_MODE_SENDER = 2;
+
 /// @title SessionKeyPermissionHook
 /// @notice Enforces session key permissions (spending limits, selector whitelist) as a DEFAULT frame.
 /// @dev EIP-8141 native: the session key address is passed in the DEFAULT frame's calldata
@@ -29,6 +31,7 @@ contract SessionKeyPermissionHook is IHook8141 {
     error SpendingLimitExceeded(uint256 requested, uint256 available);
     error SelectorNotAllowed(bytes4 selector);
     error InvalidSessionKey();
+    error NoSenderFrame();
 
     event SessionSpent(address indexed account, address indexed sessionKey, uint256 amount);
 
@@ -118,9 +121,9 @@ contract SessionKeyPermissionHook is IHook8141 {
     function _findSenderFrame() internal pure returns (uint256) {
         uint256 count = FrameTxLib.frameCount();
         for (uint256 i = 0; i < count; i++) {
-            if (FrameTxLib.frameMode(i) == 2) return i; // SENDER mode
+            if (FrameTxLib.frameMode(i) == FRAME_MODE_SENDER) return i;
         }
-        revert("No SENDER frame");
+        revert NoSenderFrame();
     }
 
     /// @dev Extract ETH value from SENDER frame's execute() calldata.

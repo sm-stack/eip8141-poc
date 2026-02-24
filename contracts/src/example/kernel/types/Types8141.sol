@@ -96,10 +96,6 @@ function getValidationResult(ValidationData validationData) pure returns (addres
     }
 }
 
-function packValidationData(ValidAfter validAfter, ValidUntil validUntil) pure returns (uint256) {
-    return uint256(ValidAfter.unwrap(validAfter)) << 208 | uint256(ValidUntil.unwrap(validUntil)) << 160;
-}
-
 function parseValidationData(uint256 validationData)
     pure
     returns (ValidAfter validAfter, ValidUntil validUntil, address result)

@@ -4,7 +4,6 @@ pragma solidity ^0.8.28;
 import {IValidator8141} from "../interfaces/IValidator8141.sol";
 import {IPolicy8141} from "../interfaces/IPolicy8141.sol";
 import {PassFlag, ValidationType, ValidationId, PermissionId, PolicyData} from "../types/Types8141.sol";
-import {VALIDATION_TYPE_PERMISSION} from "../types/Constants8141.sol";
 
 /// @title ValidatorLib8141
 /// @notice Encoding/decoding utilities for ValidationId, PermissionId, PolicyData.
@@ -12,36 +11,10 @@ import {VALIDATION_TYPE_PERMISSION} from "../types/Constants8141.sol";
 library ValidatorLib8141 {
     // ── Encoding ─────────────────────────────────────────────────────
 
-    function encodeFlag(bool skipFrameTx, bool skipSignature) internal pure returns (PassFlag flag) {
-        assembly {
-            if skipFrameTx { flag := 0x0001000000000000000000000000000000000000000000000000000000000000 }
-            if skipSignature { flag := or(flag, 0x0002000000000000000000000000000000000000000000000000000000000000) }
-        }
-    }
-
-    function encodePolicyData(bool skipFrameTx, bool skipSig, address policy)
-        internal
-        pure
-        returns (PolicyData data)
-    {
-        assembly {
-            if skipFrameTx { data := 0x0001000000000000000000000000000000000000000000000000000000000000 }
-            if skipSig { data := or(data, 0x0002000000000000000000000000000000000000000000000000000000000000) }
-            data := or(data, shl(80, policy))
-        }
-    }
-
     function validatorToIdentifier(IValidator8141 validator) internal pure returns (ValidationId vId) {
         assembly {
             vId := 0x0100000000000000000000000000000000000000000000000000000000000000
             vId := or(vId, shl(88, validator))
-        }
-    }
-
-    function permissionToIdentifier(PermissionId permissionId) internal pure returns (ValidationId vId) {
-        assembly {
-            vId := 0x0200000000000000000000000000000000000000000000000000000000000000
-            vId := or(vId, shr(8, permissionId))
         }
     }
 
@@ -69,18 +42,6 @@ library ValidatorLib8141 {
         assembly {
             flag := data
             policy := shr(80, data)
-        }
-    }
-
-    function getPolicy(PolicyData data) internal pure returns (IPolicy8141 policy) {
-        assembly {
-            policy := shr(80, data)
-        }
-    }
-
-    function getPermissionSkip(PolicyData data) internal pure returns (PassFlag flag) {
-        assembly {
-            flag := data
         }
     }
 

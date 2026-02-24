@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {SIG_VALIDATION_FAILED_UINT} from "../types/Constants8141.sol";
-import {ValidationData, getValidationResult} from "../types/Types8141.sol";
+import {ValidationData} from "../types/Types8141.sol";
 
 /// @notice Intersect two ValidationData values, taking the most restrictive result.
 /// @dev Ported from ZeroDev Kernel v3 KernelValidationResult.sol.
@@ -12,7 +12,7 @@ function _intersectValidationData(ValidationData a, ValidationData b)
     returns (ValidationData validationData)
 {
     assembly {
-        // xor(a,b) == shows only matching bits
+        // xor(a,b) shows differing bits
         // and(xor(a,b), 0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff)
         //   == filters out the validAfter and validUntil bits
         // if the result is not zero, then aggregator part is not matching

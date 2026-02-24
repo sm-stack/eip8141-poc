@@ -35,9 +35,7 @@ abstract contract ExecutorManager8141 {
     function _installExecutor(address executor, bytes calldata executorData, IHook8141 hook) internal {
         _installExecutorWithoutInit(executor, hook);
         if (executorData.length == 0) {
-            (bool success,) =
-                address(executor).call(abi.encodeWithSelector(IModule8141.onInstall.selector, executorData));
-            // ignore return value for empty data (same as Kernel v3)
+            address(executor).call(abi.encodeWithSelector(IModule8141.onInstall.selector, executorData));
         } else {
             IModule8141(executor).onInstall(executorData);
         }

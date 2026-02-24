@@ -62,6 +62,7 @@ import {
     MODULE_TYPE_POLICY,
     MODULE_TYPE_SIGNER,
     MODULE_TYPE_VALIDATOR,
+    MODULE_TYPE_EXECUTOR,
     CALLTYPE_SINGLE
 } from "../types/Constants8141.sol";
 
@@ -73,7 +74,7 @@ import {
 ///      - Selector ACL via frameDataLoad() cross-frame read (no executeUserOp wrapper needed)
 ///      - Policy data via frameDataLoad(senderFrame, offset) for rich execution context
 ///      - Enable data in VERIFY calldata (excluded from sigHash — cleaner separation)
-///      - Transient storage for VERIFY→SENDER context passing
+///      - Nonce-based replay protection (per-validator nonce space)
 abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookManager8141, ExecutorManager8141 {
     event RootValidatorUpdated(ValidationId rootValidator);
     event ValidatorInstalled(IValidator8141 validator, uint32 nonce);
@@ -317,7 +318,6 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
 
     /// @notice Validate a frame transaction. Called during VERIFY frame.
     /// @dev EIP-8141 native: uses sigHash directly, cross-frame reading for selector ACL.
-    ///      Replaces Kernel v3's _validateUserOp.
     /// @param vMode Validation mode (DEFAULT or ENABLE)
     /// @param vId The validator/permission identifier
     /// @param account The account address being validated
@@ -401,7 +401,6 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
     /// @notice Check frame tx policies for a permission.
     /// @dev EIP-8141 native: passes senderFrameIndex so policies can use frameDataLoad()
     ///      to read SENDER frame's target, value, and calldata directly.
-    ///      Replaces Kernel v3's _checkUserOpPolicy.
     function _checkFrameTxPolicy(
         PermissionId pId,
         address account,
@@ -462,10 +461,6 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
     /// @dev EIP-8141 advantage: enable data is in VERIFY frame calldata, which is
     ///      excluded from sigHash computation. This means enable data doesn't pollute
     ///      the signature at all — cleaner separation than Kernel v3.
-    ///
-    /// WARNING: Currently non-functional. This is called from a VERIFY frame (read-only),
-    /// but _enableValidationWithSig() writes to persistent storage via _installValidation(),
-    /// _configureSelector(), and _grantAccess(). All `sstore` operations revert in VERIFY frames.
     /// @dev View-only enable mode verification. Verifies enable signature without sstore.
     ///      Used in VERIFY frame where state modification is prohibited.
     function _verifyEnableMode(ValidationId vId, bytes calldata packedData, bool isReplayable)
@@ -595,7 +590,7 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
             if (
                 selectorInitData.length > 0
                     && bytes1(selectorInitData[0]) == CallType.unwrap(CALLTYPE_SINGLE)
-                    && IModule8141(selectorModule).isModuleType(2)
+                    && IModule8141(selectorModule).isModuleType(MODULE_TYPE_EXECUTOR)
             ) {
                 _installExecutorWithoutInit(selectorModule, selectorHook);
             }
@@ -613,7 +608,6 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
 
     /// @notice Verify an off-chain signature (ERC-1271).
     /// @dev Routes to validator or permission based on signature prefix.
-    ///      Replaces Kernel v3's _verifySignature.
     function _verifySignature(bytes32 hash, bytes calldata signature) internal view returns (bytes4) {
         ValidationStorage storage vs = _validationStorage();
         (ValidationId vId, bytes calldata sig) = ValidatorLib8141.decodeSignature(signature);
@@ -641,7 +635,7 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
             if (PassFlag.unwrap(permissionFlag) & PassFlag.unwrap(SKIP_SIGNATURE) != 0) {
                 revert PermissionNotAllowedForSignature();
             }
-            return _checkPermissionSignature(pId, msg.sender, hash, sig, isReplayable);
+            return _checkPermissionSignature(pId, hash, sig, isReplayable);
         } else {
             revert InvalidValidationType();
         }
@@ -649,15 +643,14 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
 
     function _checkPermissionSignature(
         PermissionId pId,
-        address caller,
         bytes32 hash,
         bytes calldata sig,
         bool isReplayable
     ) internal view returns (bytes4) {
-        (ISigner8141 signer, ValidationData valdiationData, bytes calldata validatorSig) =
+        (ISigner8141 signer, ValidationData validationData, bytes calldata validatorSig) =
             _checkSignaturePolicy(pId, msg.sender, hash, sig);
         (ValidAfter validAfter, ValidUntil validUntil,) =
-            parseValidationData(ValidationData.unwrap(valdiationData));
+            parseValidationData(ValidationData.unwrap(validationData));
         if (block.timestamp < ValidAfter.unwrap(validAfter) || block.timestamp > ValidUntil.unwrap(validUntil)) {
             return ERC1271_INVALID;
         }
@@ -757,18 +750,4 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
         }
     }
 
-    // ── Hook resolution helpers ─────────────────────────────────────────
-
-    /// @notice Get the hook for the root validator.
-    /// @dev VERIFY frames are read-only, so SENDER frames derive the hook from storage.
-    function _rootValidatorHook() internal view returns (IHook8141) {
-        ValidationStorage storage vs = _validationStorage();
-        return vs.validationConfig[vs.rootValidator].hook;
-    }
-
-    /// @notice Get the hook for a specific validator.
-    function _validatorHook(IValidator8141 validator) internal view returns (IHook8141) {
-        ValidationId vId = ValidatorLib8141.validatorToIdentifier(validator);
-        return _validationStorage().validationConfig[vId].hook;
-    }
 }

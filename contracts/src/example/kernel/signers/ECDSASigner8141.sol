@@ -14,6 +14,8 @@ contract ECDSASigner8141 is ISigner8141 {
     /// @dev Half of secp256k1 curve order, for EIP-2 signature malleability check.
     uint256 private constant _HALF_CURVE_ORDER = 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0;
 
+    error InvalidSignatureLength();
+
     event SignerRegistered(address indexed account, bytes32 indexed id, address signer);
 
     // ── STO-021 compliant storage ────────────────────────────────────────
@@ -57,7 +59,7 @@ contract ECDSASigner8141 is ISigner8141 {
         if (expectedSigner == address(0)) return 1;
 
         // Use native ecrecover (solady ECDSA.recover assembly incompatible with EIP-8141 solc)
-        require(signature.length == 65, "bad sig len");
+        if (signature.length != 65) revert InvalidSignatureLength();
         bytes32 r;
         bytes32 s;
         uint8 v;
@@ -88,7 +90,7 @@ contract ECDSASigner8141 is ISigner8141 {
         if (expectedSigner == address(0)) return ERC1271_INVALID;
 
         // Use native ecrecover (solady ECDSA.recover assembly incompatible with EIP-8141 solc)
-        require(sig.length == 65, "bad sig len");
+        if (sig.length != 65) revert InvalidSignatureLength();
         bytes32 r;
         bytes32 s;
         uint8 v;

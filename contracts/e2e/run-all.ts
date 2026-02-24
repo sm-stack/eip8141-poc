@@ -5,26 +5,18 @@
  */
 
 import { execSync } from "child_process";
-
-const c = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  dim: "\x1b[2m",
-  red: "\x1b[31m",
-  green: "\x1b[32m",
-  cyan: "\x1b[36m",
-  bgGreen: "\x1b[42m",
-  bgRed: "\x1b[41m",
-};
+import { c } from "./helpers/log.js";
 
 const suites = [
   { file: "e2e/simple/simple-basic.ts", name: "Simple8141" },
+  { file: "e2e/simple/simple-paymaster.ts", name: "Simple Paymaster" },
   { file: "e2e/kernel/kernel-basic.ts", name: "Kernel Basic" },
   { file: "e2e/kernel/kernel-validator.ts", name: "Kernel Validator" },
+  { file: "e2e/kernel/kernel-security.ts", name: "Kernel Security" },
+  { file: "e2e/kernel/kernel-permission.ts", name: "Kernel Permission" },
   { file: "e2e/kernel-hooked/spending-limit.ts", name: "SpendingLimitHook" },
-  { file: "e2e/coinbase/coinbase-ecdsa.ts", name: "Coinbase ECDSA" },
-  { file: "e2e/coinbase/coinbase-webauthn.ts", name: "Coinbase WebAuthn" },
-  { file: "e2e/light-account/light-account-ecdsa.ts", name: "LightAccount ECDSA" },
+  { file: "e2e/coinbase/coinbase-security.ts", name: "Coinbase Security" },
+  { file: "e2e/light-account/light-account-security.ts", name: "LightAccount Security" },
   { file: "e2e/benchmark/gas-benchmark.ts", name: "Gas Benchmark" },
 ];
 
