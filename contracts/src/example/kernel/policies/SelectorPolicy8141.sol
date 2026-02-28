@@ -26,7 +26,7 @@ contract SelectorPolicy8141 is IPolicy8141 {
     ///      storage access compliance (STO-021). msg.sender == account in this context.
     function checkFrameTxPolicy(bytes32 id, address, bytes32, uint256 senderFrameIndex)
         external
-        payable
+        view
         override
         returns (uint256)
     {
@@ -36,6 +36,10 @@ contract SelectorPolicy8141 is IPolicy8141 {
         }
         return 0; // success
     }
+
+    /// @inheritdoc IPolicy8141
+    /// @dev No-op: SelectorPolicy is read-only, no state to consume.
+    function consumeFrameTxPolicy(bytes32, address) external override {}
 
     /// @inheritdoc IPolicy8141
     function checkSignaturePolicy(bytes32, address, bytes32, bytes calldata)

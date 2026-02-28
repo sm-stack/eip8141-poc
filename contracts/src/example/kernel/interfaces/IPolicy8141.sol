@@ -5,13 +5,15 @@ import {IModule8141} from "./IModule8141.sol";
 
 /// @title IPolicy8141
 /// @notice Policy interface for Kernel8141 permission system.
-/// @dev Policies enforce fine-grained constraints on permission-based validation.
-///      EIP-8141 native: checkFrameTxPolicy can use FrameTxLib.frameDataLoad()
-///      to read SENDER frame data (target, value, calldata) directly, which is
-///      more powerful than Kernel v3's PackedUserOperation-based approach.
+/// @dev Two-phase policy model for EIP-8141:
+///      - VERIFY phase: checkFrameTxPolicy (view) — read-only validation in STATICCALL context
+///      - SENDER phase: consumeFrameTxPolicy — stateful consumption (e.g. gas budget decrement)
+///
+///      Read-only policies (e.g. SelectorPolicy) implement consumeFrameTxPolicy as no-op.
+///      Stateful policies (e.g. GasPolicy) perform state writes in consumeFrameTxPolicy.
 interface IPolicy8141 is IModule8141 {
-    /// @notice Validate a frame transaction against this policy.
-    /// @dev Called during permission-based VERIFY frame validation.
+    /// @notice Validate a frame transaction against this policy (VERIFY phase).
+    /// @dev Called during permission-based VERIFY frame validation (STATICCALL context).
     ///      The policy can use FrameTxLib.frameDataLoad(senderFrameIndex, offset)
     ///      to read SENDER frame's target, value, and calldata.
     /// @param id The permission identifier (bytes32 for storage key derivation)
@@ -21,8 +23,16 @@ interface IPolicy8141 is IModule8141 {
     /// @return result 0 for success, 1 for failure (matches ERC-4337 convention)
     function checkFrameTxPolicy(bytes32 id, address account, bytes32 sigHash, uint256 senderFrameIndex)
         external
-        payable
+        view
         returns (uint256 result);
+
+    /// @notice Consume policy state for a frame transaction (SENDER phase).
+    /// @dev Called from executeHooked() in SENDER frame context where state writes are allowed.
+    ///      Read-only policies should implement this as a no-op.
+    ///      Stateful policies (e.g. GasPolicy) perform state writes here (e.g. budget decrement).
+    /// @param id The permission identifier
+    /// @param account The smart account address
+    function consumeFrameTxPolicy(bytes32 id, address account) external;
 
     /// @notice Validate an ERC-1271 signature against this policy.
     /// @dev Called during permission-based ERC-1271 signature validation.
