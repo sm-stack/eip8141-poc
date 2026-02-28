@@ -70,27 +70,26 @@ import {
 ///
 ///   Frame transaction patterns:
 ///
-///     Simple Transaction (root validator, no hook):
-///       Frame 0: VERIFY(kernel)  → kernel.validate(sig, scope=2)          → APPROVE
-///       Frame 1: SENDER(kernel)  → kernel.execute(mode, data)
+///     Simple (root validator, no hook):
+///       Frame 0: VERIFY(kernel)  → validate(sig, 1)                       → APPROVE
+///       Frame 1: SENDER(kernel)  → execute(mode, data)
 ///
-///     Root Validator + Hook:
-///       Frame 0: DEFAULT(hook)   → hook.check()                           → pre-check in own frame
-///       Frame 1: VERIFY(kernel)  → kernel.validate(sig, scope)            → verifies frameStatus(0)==SUCCESS
-///       Frame 2: SENDER(kernel)  → kernel.execute(mode, data)
+///     Root Validator + Hook (inline):
+///       Frame 0: VERIFY(kernel)  → validate(sig, 1)                       → enforces executeHooked selector
+///       Frame 1: SENDER(kernel)  → executeHooked(vId, mode, data)         → hook pre/post + execution (atomic)
 ///
 ///     Non-Root Validator (sigHash-bound):
-///       Frame 0: VERIFY(kernel)  → kernel.validateFromSenderFrame(sig, scope)
-///       Frame 1: SENDER(kernel)  → kernel.validatedCall(validator, data)
+///       Frame 0: VERIFY(kernel)  → validateFromSenderFrame(sig, 1)
+///       Frame 1: SENDER(kernel)  → validatedCall(validator, data)
 ///
-///     Enable Mode (install + validate in one tx):
-///       Frame 0: VERIFY(kernel)  → kernel.validateWithEnable(enableData, sig, scope)
-///       Frame 1: DEFAULT(kernel) → kernel.enableInstall(...)              → sstore in DEFAULT frame
-///       Frame 2: SENDER(kernel)  → kernel.execute(mode, data)
+///     Enable Mode (install + validate):
+///       Frame 0: VERIFY(kernel)  → validateWithEnable(enableData, sig, 2) → verify only (no sstore)
+///       Frame 1: DEFAULT(kernel) → enableInstall(...)                     → sstore in DEFAULT frame
+///       Frame 2: SENDER(kernel)  → execute(mode, data)
 ///
-///     Permission-Based:
-///       Frame 0: VERIFY(kernel)  → kernel.validatePermission(sig, scope)
-///       Frame 1: SENDER(kernel)  → kernel.execute(mode, data)
+///     Permission-Based (with stateful policy consumption):
+///       Frame 0: VERIFY(kernel)  → validatePermission(sig, 1)             → enforces executeHooked selector
+///       Frame 1: SENDER(kernel)  → executeHooked(vId, mode, data)         → policy consume + hook + execution
 contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
     error ExecutionReverted();
     error InvalidExecutor();
@@ -414,9 +413,9 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
             _consumeStatefulPolicies(ValidatorLib8141.getPermissionId(validationId));
         }
 
-        // 2. Hook pre/post (if configured, not sentinel)
+        // 2. Hook pre/post (if configured)
         IHook8141 hook = vs.validationConfig[validationId].hook;
-        if (address(hook) > address(1)) {
+        if (_isCallableHook(hook)) {
             uint256 value = _extractExecutionValue(execMode, executionCalldata);
             bytes memory context = _doPreHook(hook, value, executionCalldata);
             ExecLib8141.execute(execMode, executionCalldata);
@@ -438,7 +437,7 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
             revert InvalidExecutor();
         }
         bytes memory context;
-        bool callHook = address(hook) != HOOK_INSTALLED;
+        bool callHook = _isCallableHook(hook);
         if (callHook) {
             context = _doPreHook(hook, msg.value, msg.data);
         }
@@ -449,7 +448,7 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
     }
 
     /// @notice Wrapper for non-root validator calls. sigHash binds this calldata.
-    /// @dev Hook orchestration removed — hooks execute in separate DEFAULT frames.
+    /// @dev Hooks for non-root validators execute inline via executeHooked() in SENDER frame.
     function validatedCall(IValidator8141 validator, bytes calldata data) external payable {
         if (msg.sender != address(this)) {
             revert InvalidCaller();
@@ -747,8 +746,8 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
     function _enforceHookedExecution(ValidationId vId, uint256 senderFrameIdx) internal view {
         IHook8141 hook = _validationStorage().validationConfig[vId].hook;
 
-        // Sentinel values: no hook, no enforcement needed
-        if (address(hook) == HOOK_INSTALLED || address(hook) == HOOK_NOT_INSTALLED) return;
+        // Sentinel values: no callable hook, no enforcement needed
+        if (!_isCallableHook(hook)) return;
 
         // SENDER frame must call executeHooked
         bytes4 senderSelector = bytes4(FrameTxLib.frameDataLoad(senderFrameIdx, 0));

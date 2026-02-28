@@ -10,6 +10,13 @@ import {MODULE_TYPE_HOOK} from "../types/Constants8141.sol";
 /// @notice Manages hook lifecycle and invocation for Kernel8141.
 /// @dev Ported from Kernel v3 HookManager. Hooks wrap execution with preCheck/postCheck.
 abstract contract HookManager8141 {
+    /// @dev Returns true if hook is an actual hook contract requiring preCheck/postCheck calls.
+    ///      Sentinel values (address(0) = not installed, address(1) = installed without hook)
+    ///      are not callable hooks.
+    function _isCallableHook(IHook8141 hook) internal pure returns (bool) {
+        return address(hook) > address(1);
+    }
+
     function _doPreHook(IHook8141 hook, uint256 value, bytes calldata callData)
         internal
         returns (bytes memory context)
@@ -26,9 +33,7 @@ abstract contract HookManager8141 {
     /// @param hook The hook to install
     /// @param hookData Encoded as [1B flag][actual hookData]. 0xff forces onInstall call.
     function _installHook(IHook8141 hook, bytes calldata hookData) internal {
-        if (address(hook) == address(0) || address(hook) == address(1)) {
-            return;
-        }
+        if (!_isCallableHook(hook)) return;
         if (!hook.isInitialized(address(this)) || (hookData.length > 0 && bytes1(hookData[0]) == bytes1(0xff))) {
             hook.onInstall(hookData[1:]);
         }
@@ -40,9 +45,7 @@ abstract contract HookManager8141 {
     /// @param hook The hook to uninstall
     /// @param hookData Encoded as [1B flag][actual hookData]. 0xff triggers onUninstall call.
     function _uninstallHook(IHook8141 hook, bytes calldata hookData) internal {
-        if (address(hook) == address(0) || address(hook) == address(1)) {
-            return;
-        }
+        if (!_isCallableHook(hook)) return;
         if (bytes1(hookData[0]) == bytes1(0xff)) {
             ModuleLib8141.uninstallModule(address(hook), hookData[1:]);
         }
