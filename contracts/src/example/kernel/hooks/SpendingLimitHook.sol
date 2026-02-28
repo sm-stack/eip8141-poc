@@ -8,16 +8,20 @@ import {FrameTxLib} from "../../../FrameTxLib.sol";
 uint8 constant FRAME_MODE_SENDER = 2;
 
 /// @title SpendingLimitHook
-/// @notice Enforces daily spending limits as a DEFAULT frame target.
-/// @dev Frame-native hook: called directly in a DEFAULT frame, uses TXPARAM
-///      to read account identity (txSender) and execution value (frameDataLoad on SENDER frame).
+/// @notice Enforces daily spending limits via inline hook pattern.
+/// @dev Primary usage: called inline from executeHooked() in SENDER frame.
+///      executeHooked() extracts ETH value from execution calldata and passes it
+///      as msgValue to preCheck(), ensuring atomic pre/post execution wrapping.
 ///
-///      Frame pattern:
-///        Frame 0: DEFAULT(this) → check()           — pre-check spending limit
-///        Frame 1: VERIFY(kernel) → validate()        — verifies frameStatus(0)==SUCCESS
-///        Frame 2: SENDER(kernel) → execute()
+///      Frame pattern (inline model):
+///        Frame 0: VERIFY(kernel) → validate(sig, scope)  — enforces executeHooked selector
+///        Frame 1: SENDER(kernel) → executeHooked(vId, mode, data) {
+///            hook.preCheck(account, value, data)  ← spending limit check
+///            execute(mode, data)
+///            hook.postCheck(context)
+///        }
 ///
-///      Also retains IHook8141 interface for backward compatibility (fallback handler hooks).
+///      Also retains check() for backward compatibility (DEFAULT frame pattern, deprecated).
 contract SpendingLimitHook is IHook8141 {
     struct SpendingState {
         uint256 dailyLimit;
@@ -34,11 +38,13 @@ contract SpendingLimitHook is IHook8141 {
     event DailyLimitSet(address indexed account, uint256 dailyLimit);
     event SpendingRecorded(address indexed account, uint256 amount, uint256 totalToday);
 
-    // ── DEFAULT frame entry point ─────────────────────────────────────
+    // ── DEFAULT frame entry point (deprecated) ────────────────────────
 
     /// @notice Called from a DEFAULT frame. Uses TXPARAM to read account and spending value.
-    /// @dev msg.sender = ENTRY_POINT (0xaa) in DEFAULT frames. Account identified via txSender().
-    ///      Value extracted from SENDER frame's execute() calldata via frameDataLoad().
+    /// @dev @deprecated Use inline hook model via executeHooked() instead.
+    ///      The DEFAULT frame pattern has a fundamental limitation: hook frame revert
+    ///      does NOT invalidate the transaction, so execution can proceed without hook approval.
+    ///      The inline model (preCheck/postCheck called from executeHooked) provides atomicity.
     function check() external {
         address account = FrameTxLib.txSender();
 
@@ -67,9 +73,11 @@ contract SpendingLimitHook is IHook8141 {
         emit SpendingRecorded(account, totalValue, state.spentToday);
     }
 
-    // ── IHook8141 (backward compatibility for fallback hooks) ─────────
+    // ── IHook8141 (primary path via executeHooked inline model) ───────
 
     /// @inheritdoc IHook8141
+    /// @dev Called inline from executeHooked(). msgValue is the extracted ETH value
+    ///      from the execution calldata. msg.sender is the kernel account.
     function preCheck(address, uint256 msgValue, bytes calldata)
         external
         payable
