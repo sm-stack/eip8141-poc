@@ -104,7 +104,7 @@ export function printReceipt(r: any) {
     for (let i = 0; i < r.frameReceipts.length; i++) {
       const fr = r.frameReceipts[i];
       const fs = FRAME_STATUS[fr.status] || { name: `Unknown(${fr.status})`, color: c.yellow, icon: "?" };
-      const frameLabel = i === 0 ? "VERIFY" : i === 1 ? "SENDER" : `Frame${i}`;
+      const frameLabel = `Frame[${i}]`;
       console.log(
         `  ${c.dim}│${c.reset} ${c.dim}${frameLabel}:${c.reset} ${fs.color}${fs.icon} ${fs.name}${c.reset}  ${c.gray}gas: ${BigInt(fr.gasUsed).toLocaleString()}${c.reset}`
       );

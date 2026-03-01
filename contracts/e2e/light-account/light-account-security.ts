@@ -20,9 +20,9 @@ import { secp256k1 } from "@noble/curves/secp256k1";
 import { CHAIN_ID, DEV_KEY, SECOND_OWNER_KEY, DEAD_ADDR, FRAME_MODE_VERIFY, FRAME_MODE_SENDER } from "../helpers/config.js";
 import { waitForReceipt } from "../helpers/client.js";
 import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
-import { printReceipt, verifyReceipt } from "../helpers/receipt.js";
+import { verifyReceipt } from "../helpers/receipt.js";
 import { walletAbi } from "../helpers/abis/light-account.js";
-import { testHeader, testPassed, testFailed, summary, fatal, detail } from "../helpers/log.js";
+import { printReceipt, testHeader, testPassed, testFailed, summary, fatal, detail } from "../helpers/log.js";
 import { deployLightAccountTestbed } from "./setup.js";
 
 // secp256k1 curve order

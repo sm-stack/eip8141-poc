@@ -16,9 +16,9 @@ import { CHAIN_ID, DEAD_ADDR, FRAME_MODE_VERIFY, FRAME_MODE_SENDER } from "../he
 import { waitForReceipt } from "../helpers/client.js";
 import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
 import { signWithWebAuthn } from "../helpers/webauthn.js";
-import { printReceipt, verifyReceipt } from "../helpers/receipt.js";
+import { verifyReceipt } from "../helpers/receipt.js";
 import { walletAbi } from "../helpers/abis/coinbase.js";
-import { testHeader, testPassed, summary, fatal } from "../helpers/log.js";
+import { printReceipt, testHeader, testPassed, summary, fatal } from "../helpers/log.js";
 import { deployCoinbaseTestbed } from "./setup.js";
 
 async function main() {

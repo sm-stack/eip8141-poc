@@ -20,10 +20,11 @@ import { CHAIN_ID, DEV_KEY, SECOND_OWNER_KEY, DEAD_ADDR, FRAME_MODE_VERIFY, FRAM
 import { waitForReceipt } from "../helpers/client.js";
 import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
 import { signFrameHash } from "../helpers/signing.js";
-import { printReceipt, verifyReceipt } from "../helpers/receipt.js";
+import { verifyReceipt } from "../helpers/receipt.js";
 import { kernelAbi } from "../helpers/abis/kernel.js";
-import { testHeader, testPassed, testFailed, summary, fatal, detail } from "../helpers/log.js";
+import { printReceipt, testHeader, testPassed, testFailed, summary, fatal, detail } from "../helpers/log.js";
 import { deployKernelTestbed, type KernelTestContext } from "./setup.js";
+import { encodeExecMode, encodeSingleExec } from "../helpers/exec-encoding.js";
 
 // secp256k1 curve order
 const SECP256K1_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
@@ -105,13 +106,11 @@ async function main() {
   let total = 0;
 
   // Use a no-op SENDER call for all tests
+  const execMode = encodeExecMode("0x00" as Hex, "0x00" as Hex);
   const senderCalldata = encodeFunctionData({
     abi: kernelAbi,
     functionName: "execute",
-    args: [
-      "0x0000000000000000000000000000000000000000000000000000000000000000" as Hex, // CALLTYPE_SINGLE | EXECTYPE_DEFAULT
-      ("0x" + DEAD_ADDR.slice(2).padStart(40, "0") + "0".repeat(64)) as Hex, // target + 0 value
-    ],
+    args: [execMode, encodeSingleExec(DEAD_ADDR, 0n)],
   });
 
   // ── Test 1: Reject malleable (high-s) ECDSA signature ───────────────

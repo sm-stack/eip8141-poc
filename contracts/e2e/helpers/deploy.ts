@@ -9,8 +9,12 @@ import { deploy as logDeploy } from "./log.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-/** Load compiled bytecode from forge output artifacts. */
+const bytecodeCache = new Map<string, Hex>();
+
+/** Load compiled bytecode from forge output artifacts (cached). */
 export function loadBytecode(contractName: string): Hex {
+  const cached = bytecodeCache.get(contractName);
+  if (cached) return cached;
   const artifactPath = join(
     __dirname,
     "..",
@@ -20,7 +24,9 @@ export function loadBytecode(contractName: string): Hex {
     `${contractName}.json`
   );
   const artifact = JSON.parse(readFileSync(artifactPath, "utf-8"));
-  return artifact.bytecode.object as Hex;
+  const bytecode = artifact.bytecode.object as Hex;
+  bytecodeCache.set(contractName, bytecode);
+  return bytecode;
 }
 
 /** Deploy a contract and return its address. */

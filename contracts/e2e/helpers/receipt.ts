@@ -1,8 +1,4 @@
 import type { Address } from "viem";
-import { printReceipt } from "./log.js";
-
-// Re-export printReceipt from log.ts
-export { printReceipt };
 
 export function verifyReceipt(
   receipt: any,

@@ -26,9 +26,9 @@ import { createTestClients, waitForReceipt, fundAccount } from "../helpers/clien
 import { loadBytecode } from "../helpers/deploy.js";
 import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
 import { signFrameHash } from "../helpers/signing.js";
-import { printReceipt, verifyReceipt } from "../helpers/receipt.js";
+import { verifyReceipt } from "../helpers/receipt.js";
 import { SIMPLE_VALIDATE_SELECTOR } from "../helpers/abis/simple.js";
-import { banner, sectionHeader, info, step, success, testHeader, testPassed, summary, fatal } from "../helpers/log.js";
+import { printReceipt, banner, sectionHeader, info, step, success, testHeader, testPassed, summary, fatal } from "../helpers/log.js";
 
 async function main() {
   const { publicClient, walletClient, devAddr } = createTestClients();

@@ -22,15 +22,10 @@ import {
   padHex,
   type Hex,
   type Address,
-  type Hash,
 } from "viem";
-import { secp256k1 } from "@noble/curves/secp256k1";
 import {
-  CHAIN_ID,
   DEV_KEY,
   CHAIN_DEF,
-  FRAME_MODE_VERIFY,
-  FRAME_MODE_SENDER,
 } from "../helpers/config.js";
 
 // Per-account recipient addresses to avoid SSTORE zero→non-zero bias
@@ -40,7 +35,6 @@ const DEAD_COINBASE = "0x000000000000000000000000000000000000DEA3" as Address;
 const DEAD_LIGHT    = "0x000000000000000000000000000000000000DeA4" as Address;
 import { createTestClients, waitForReceipt, fundAccount } from "../helpers/client.js";
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
-import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
 import { signFrameHash } from "../helpers/signing.js";
 import { verifyReceipt } from "../helpers/receipt.js";
 import { kernelAbi, factoryAbi } from "../helpers/abis/kernel.js";
@@ -49,6 +43,7 @@ import { walletAbi as lightWalletAbi, factoryAbi as lightFactoryAbi } from "../h
 import { SIMPLE_VALIDATE_SELECTOR, simpleAccountAbi } from "../helpers/abis/simple.js";
 import { benchmarkTokenAbi } from "../helpers/abis/benchmark-token.js";
 import { banner, sectionHeader, info, step, success, fatal } from "../helpers/log.js";
+import { sendFrameTx, kernelValidateVerify, coinbaseVerify, lightAccountVerify, type BuildVerifyData } from "../helpers/send-frame-tx.js";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -76,13 +71,6 @@ const c = {
 
 const { publicClient, walletClient, devAddr } = createTestClients();
 
-async function getFrameTxBase(sender: Address) {
-  const nonce = await publicClient.getTransactionCount({ address: sender });
-  const block = await publicClient.getBlock();
-  const gasFeeCap = block.baseFeePerGas! + 2_000_000_000n;
-  return { nonce: BigInt(nonce), gasFeeCap };
-}
-
 function extractGas(receipt: any): { totalGas: bigint; verifyGas: bigint; senderGas: bigint } {
   return {
     totalGas: BigInt(receipt.gasUsed),
@@ -105,6 +93,23 @@ async function sendTx(to: Address, data: Hex): Promise<void> {
   if (receipt.status !== "0x1") throw new Error(`Tx failed: ${hash}`);
 }
 
+/** Simple8141Account: validate(uint8 v, bytes32 r, bytes32 s, uint8 scope) — manual ABI */
+function simpleVerify(): BuildVerifyData {
+  return (sigHash: Hex): Hex => {
+    const { r, s, v } = signFrameHash(sigHash, DEV_KEY);
+    const selector = hexToBytes(SIMPLE_VALIDATE_SELECTOR as Hex);
+    const calldata = new Uint8Array(4 + 32 * 4);
+    calldata.set(selector, 0);
+    calldata[35] = v + 27;
+    const rHex = r.toString(16).padStart(64, "0");
+    calldata.set(hexToBytes(("0x" + rHex) as Hex), 36);
+    const sHex = s.toString(16).padStart(64, "0");
+    calldata.set(hexToBytes(("0x" + sHex) as Hex), 68);
+    calldata[131] = 2; // scope=2 (both)
+    return bytesToHex(calldata);
+  };
+}
+
 // ─── Simple8141Account ──────────────────────────────────────
 
 async function deploySimple(): Promise<Address> {
@@ -113,47 +118,6 @@ async function deploySimple(): Promise<Address> {
   const deployData = (bytecode + constructorArg.slice(2)) as Hex;
   const { address } = await deployContract(walletClient, publicClient, deployData, 2_000_000n, "Simple8141Account");
   return address;
-}
-
-function buildSimpleValidateCalldata(sigHash: Hex): Uint8Array {
-  const { r, s, v } = signFrameHash(sigHash, DEV_KEY);
-  const selector = hexToBytes(SIMPLE_VALIDATE_SELECTOR as Hex);
-  const calldata = new Uint8Array(4 + 32 * 4);
-  calldata.set(selector, 0);
-  calldata[35] = v + 27;
-  const rHex = r.toString(16).padStart(64, "0");
-  calldata.set(hexToBytes(("0x" + rHex) as Hex), 36);
-  const sHex = s.toString(16).padStart(64, "0");
-  calldata.set(hexToBytes(("0x" + sHex) as Hex), 68);
-  calldata[131] = 2; // scope=2 (both)
-  return calldata;
-}
-
-async function sendSimpleFrameTx(accountAddr: Address, senderCalldata: Hex): Promise<any> {
-  const { nonce, gasFeeCap } = await getFrameTxBase(accountAddr);
-  const frameTxParams: FrameTxParams = {
-    chainId: BigInt(CHAIN_ID),
-    nonce,
-    sender: accountAddr,
-    gasTipCap: 1_000_000_000n,
-    gasFeeCap,
-    frames: [
-      { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 200_000n, data: new Uint8Array(0) },
-      { mode: FRAME_MODE_SENDER, target: null, gasLimit: 200_000n, data: hexToBytes(senderCalldata) },
-    ],
-    blobFeeCap: 0n,
-    blobHashes: [],
-  };
-
-  const sigHash = computeSigHash(frameTxParams);
-  frameTxParams.frames[0].data = buildSimpleValidateCalldata(sigHash);
-
-  const rawTx = encodeFrameTx(frameTxParams);
-  const txHash = (await publicClient.request({
-    method: "eth_sendRawTransaction" as any,
-    params: [rawTx],
-  })) as Hash;
-  return await waitForReceipt(publicClient, txHash);
 }
 
 // ─── Kernel8141 ─────────────────────────────────────────────
@@ -209,44 +173,6 @@ async function deployKernel(): Promise<{ kernelAddr: Address; validatorAddr: Add
   return { kernelAddr, validatorAddr };
 }
 
-async function sendKernelFrameTx(kernelAddr: Address, senderCalldata: Hex): Promise<any> {
-  const { nonce, gasFeeCap } = await getFrameTxBase(kernelAddr);
-  const frameTxParams: FrameTxParams = {
-    chainId: BigInt(CHAIN_ID),
-    nonce,
-    sender: kernelAddr,
-    gasTipCap: 1_000_000_000n,
-    gasFeeCap,
-    frames: [
-      { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 300_000n, data: new Uint8Array(0) },
-      { mode: FRAME_MODE_SENDER, target: null, gasLimit: 500_000n, data: hexToBytes(senderCalldata) },
-    ],
-    blobFeeCap: 0n,
-    blobHashes: [],
-  };
-
-  const sigHash = computeSigHash(frameTxParams);
-  const sig = secp256k1.sign(sigHash.slice(2), DEV_KEY.slice(2));
-  const rHex = sig.r.toString(16).padStart(64, "0");
-  const sHex = sig.s.toString(16).padStart(64, "0");
-  const v = sig.recovery;
-  const ecdsaSig = hexToBytes(("0x" + rHex + sHex + v.toString(16).padStart(2, "0")) as Hex);
-
-  const validateCalldata = encodeFunctionData({
-    abi: kernelAbi,
-    functionName: "validate",
-    args: [bytesToHex(ecdsaSig), 2],
-  });
-  frameTxParams.frames[0].data = hexToBytes(validateCalldata);
-
-  const rawTx = encodeFrameTx(frameTxParams);
-  const txHash = (await publicClient.request({
-    method: "eth_sendRawTransaction" as any,
-    params: [rawTx],
-  })) as Hash;
-  return await waitForReceipt(publicClient, txHash);
-}
-
 // ─── CoinbaseSmartWallet8141 ────────────────────────────────
 
 async function deployCoinbase(): Promise<Address> {
@@ -294,48 +220,6 @@ async function deployCoinbase(): Promise<Address> {
   return walletAddr;
 }
 
-async function sendCoinbaseFrameTx(walletAddr: Address, senderCalldata: Hex): Promise<any> {
-  const { nonce, gasFeeCap } = await getFrameTxBase(walletAddr);
-  const frameTxParams: FrameTxParams = {
-    chainId: BigInt(CHAIN_ID),
-    nonce,
-    sender: walletAddr,
-    gasTipCap: 1_000_000_000n,
-    gasFeeCap,
-    frames: [
-      { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 300_000n, data: new Uint8Array(0) },
-      { mode: FRAME_MODE_SENDER, target: null, gasLimit: 500_000n, data: hexToBytes(senderCalldata) },
-    ],
-    blobFeeCap: 0n,
-    blobHashes: [],
-  };
-
-  const sigHash = computeSigHash(frameTxParams);
-  const sig = secp256k1.sign(sigHash.slice(2), DEV_KEY.slice(2));
-  const rHex = sig.r.toString(16).padStart(64, "0");
-  const sHex = sig.s.toString(16).padStart(64, "0");
-  const v = sig.recovery;
-  const ecdsaSig = hexToBytes(("0x" + rHex + sHex + v.toString(16).padStart(2, "0")) as Hex);
-
-  const signatureWrapper = encodeAbiParameters(
-    parseAbiParameters("uint256, bytes"),
-    [0n, bytesToHex(ecdsaSig)]
-  );
-  const validateCalldata = encodeFunctionData({
-    abi: walletAbi,
-    functionName: "validate",
-    args: [signatureWrapper, 2],
-  });
-  frameTxParams.frames[0].data = hexToBytes(validateCalldata);
-
-  const rawTx = encodeFrameTx(frameTxParams);
-  const txHash = (await publicClient.request({
-    method: "eth_sendRawTransaction" as any,
-    params: [rawTx],
-  })) as Hash;
-  return await waitForReceipt(publicClient, txHash);
-}
-
 // ─── LightAccount8141 ───────────────────────────────────────
 
 async function deployLightAccount(): Promise<Address> {
@@ -374,49 +258,6 @@ async function deployLightAccount(): Promise<Address> {
   }) as Address;
 
   return walletAddr;
-}
-
-async function sendLightAccountFrameTx(walletAddr: Address, senderCalldata: Hex): Promise<any> {
-  const { nonce, gasFeeCap } = await getFrameTxBase(walletAddr);
-  const frameTxParams: FrameTxParams = {
-    chainId: BigInt(CHAIN_ID),
-    nonce,
-    sender: walletAddr,
-    gasTipCap: 1_000_000_000n,
-    gasFeeCap,
-    frames: [
-      { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 300_000n, data: new Uint8Array(0) },
-      { mode: FRAME_MODE_SENDER, target: null, gasLimit: 500_000n, data: hexToBytes(senderCalldata) },
-    ],
-    blobFeeCap: 0n,
-    blobHashes: [],
-  };
-
-  const sigHash = computeSigHash(frameTxParams);
-  const sig = secp256k1.sign(sigHash.slice(2), DEV_KEY.slice(2));
-  const rHex = sig.r.toString(16).padStart(64, "0");
-  const sHex = sig.s.toString(16).padStart(64, "0");
-  const v = sig.recovery;
-  const ecdsaSig = hexToBytes(("0x" + rHex + sHex + v.toString(16).padStart(2, "0")) as Hex);
-
-  // [0x00 (EOA type)] + [65-byte ECDSA sig]
-  const typedSig = new Uint8Array(1 + ecdsaSig.length);
-  typedSig[0] = 0x00; // SignatureType.EOA
-  typedSig.set(ecdsaSig, 1);
-
-  const validateCalldata = encodeFunctionData({
-    abi: lightWalletAbi,
-    functionName: "validate",
-    args: [bytesToHex(typedSig), 2],
-  });
-  frameTxParams.frames[0].data = hexToBytes(validateCalldata);
-
-  const rawTx = encodeFrameTx(frameTxParams);
-  const txHash = (await publicClient.request({
-    method: "eth_sendRawTransaction" as any,
-    params: [rawTx],
-  })) as Hash;
-  return await waitForReceipt(publicClient, txHash);
 }
 
 // ─── Table output ───────────────────────────────────────────
@@ -591,13 +432,23 @@ async function main() {
   success("1,000 BMK minted");
 
   step("ETH transfer...");
-  const simpleEthReceipt = await sendSimpleFrameTx(simpleAddr, ethTransferCalldata(DEAD_SIMPLE));
+  const simpleEthReceipt = await sendFrameTx({
+    publicClient, sender: simpleAddr,
+    senderCalldata: ethTransferCalldata(DEAD_SIMPLE),
+    verifyGas: 200_000n, senderGas: 200_000n,
+    buildVerifyData: simpleVerify(),
+  });
   verifyReceipt(simpleEthReceipt, simpleAddr);
   const simpleEth = extractGas(simpleEthReceipt);
   success(`Total: ${fmtGas(simpleEth.totalGas)}`);
 
   step("ERC20 transfer...");
-  const simpleErc20Receipt = await sendSimpleFrameTx(simpleAddr, erc20TransferCalldata(tokenAddr, DEAD_SIMPLE));
+  const simpleErc20Receipt = await sendFrameTx({
+    publicClient, sender: simpleAddr,
+    senderCalldata: erc20TransferCalldata(tokenAddr, DEAD_SIMPLE),
+    verifyGas: 200_000n, senderGas: 200_000n,
+    buildVerifyData: simpleVerify(),
+  });
   verifyReceipt(simpleErc20Receipt, simpleAddr);
   const simpleErc20 = extractGas(simpleErc20Receipt);
   success(`Total: ${fmtGas(simpleErc20.totalGas)}`);
@@ -627,13 +478,21 @@ async function main() {
   success("1,000 BMK minted");
 
   step("ETH transfer...");
-  const kernelEthReceipt = await sendKernelFrameTx(kernelAddr, kernelEthCalldata);
+  const kernelEthReceipt = await sendFrameTx({
+    publicClient, sender: kernelAddr,
+    senderCalldata: kernelEthCalldata,
+    buildVerifyData: kernelValidateVerify(),
+  });
   verifyReceipt(kernelEthReceipt, kernelAddr);
   const kernelEth = extractGas(kernelEthReceipt);
   success(`Total: ${fmtGas(kernelEth.totalGas)}`);
 
   step("ERC20 transfer...");
-  const kernelErc20Receipt = await sendKernelFrameTx(kernelAddr, kernelErc20Calldata(tokenAddr));
+  const kernelErc20Receipt = await sendFrameTx({
+    publicClient, sender: kernelAddr,
+    senderCalldata: kernelErc20Calldata(tokenAddr),
+    buildVerifyData: kernelValidateVerify(),
+  });
   verifyReceipt(kernelErc20Receipt, kernelAddr);
   const kernelErc20 = extractGas(kernelErc20Receipt);
   success(`Total: ${fmtGas(kernelErc20.totalGas)}`);
@@ -663,13 +522,21 @@ async function main() {
   success("1,000 BMK minted");
 
   step("ETH transfer...");
-  const coinbaseEthReceipt = await sendCoinbaseFrameTx(coinbaseAddr, coinbaseEthCalldata);
+  const coinbaseEthReceipt = await sendFrameTx({
+    publicClient, sender: coinbaseAddr,
+    senderCalldata: coinbaseEthCalldata,
+    buildVerifyData: coinbaseVerify(0, DEV_KEY),
+  });
   verifyReceipt(coinbaseEthReceipt, coinbaseAddr);
   const coinbaseEth = extractGas(coinbaseEthReceipt);
   success(`Total: ${fmtGas(coinbaseEth.totalGas)}`);
 
   step("ERC20 transfer...");
-  const coinbaseErc20Receipt = await sendCoinbaseFrameTx(coinbaseAddr, coinbaseErc20Calldata(tokenAddr));
+  const coinbaseErc20Receipt = await sendFrameTx({
+    publicClient, sender: coinbaseAddr,
+    senderCalldata: coinbaseErc20Calldata(tokenAddr),
+    buildVerifyData: coinbaseVerify(0, DEV_KEY),
+  });
   verifyReceipt(coinbaseErc20Receipt, coinbaseAddr);
   const coinbaseErc20 = extractGas(coinbaseErc20Receipt);
   success(`Total: ${fmtGas(coinbaseErc20.totalGas)}`);
@@ -699,13 +566,21 @@ async function main() {
   success("1,000 BMK minted");
 
   step("ETH transfer...");
-  const lightEthReceipt = await sendLightAccountFrameTx(lightAddr, lightEthCalldata);
+  const lightEthReceipt = await sendFrameTx({
+    publicClient, sender: lightAddr,
+    senderCalldata: lightEthCalldata,
+    buildVerifyData: lightAccountVerify(),
+  });
   verifyReceipt(lightEthReceipt, lightAddr);
   const lightEth = extractGas(lightEthReceipt);
   success(`Total: ${fmtGas(lightEth.totalGas)}`);
 
   step("ERC20 transfer...");
-  const lightErc20Receipt = await sendLightAccountFrameTx(lightAddr, lightErc20Calldata(tokenAddr));
+  const lightErc20Receipt = await sendFrameTx({
+    publicClient, sender: lightAddr,
+    senderCalldata: lightErc20Calldata(tokenAddr),
+    buildVerifyData: lightAccountVerify(),
+  });
   verifyReceipt(lightErc20Receipt, lightAddr);
   const lightErc20 = extractGas(lightErc20Receipt);
   success(`Total: ${fmtGas(lightErc20.totalGas)}`);

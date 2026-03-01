@@ -24,9 +24,9 @@ import { CHAIN_ID, DEV_KEY, SECOND_OWNER_KEY, DEAD_ADDR, FRAME_MODE_VERIFY, FRAM
 import { createTestClients, waitForReceipt, fundAccount } from "../helpers/client.js";
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
 import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
-import { printReceipt, verifyReceipt } from "../helpers/receipt.js";
+import { verifyReceipt } from "../helpers/receipt.js";
 import { walletAbi, factoryAbi } from "../helpers/abis/coinbase.js";
-import { testHeader, testPassed, testFailed, summary, fatal, banner, sectionHeader, detail, success } from "../helpers/log.js";
+import { printReceipt, testHeader, testPassed, testFailed, summary, fatal, banner, sectionHeader, detail, success } from "../helpers/log.js";
 import { deployCoinbaseTestbed } from "./setup.js";
 
 // secp256k1 curve order

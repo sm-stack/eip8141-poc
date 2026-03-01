@@ -15,33 +15,24 @@
 
 import {
   encodeAbiParameters,
-  parseAbiParameters,
   encodeFunctionData,
-  hexToBytes,
-  bytesToHex,
   concatHex,
-  padHex,
   toFunctionSelector,
   type Hex,
-  type Hash,
   type Address,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
-  CHAIN_ID,
   DEV_KEY,
   SECOND_OWNER_KEY,
   DEAD_ADDR,
-  FRAME_MODE_VERIFY,
-  FRAME_MODE_SENDER,
+  HOOK_INSTALLED,
 } from "../helpers/config.js";
-import { waitForReceipt } from "../helpers/client.js";
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
-import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
-import { signFrameHash } from "../helpers/signing.js";
-import { printReceipt, verifyReceipt } from "../helpers/receipt.js";
+import { verifyReceipt } from "../helpers/receipt.js";
 import { kernelAbi } from "../helpers/abis/kernel.js";
 import {
+  printReceipt,
   testHeader,
   testPassed,
   testFailed,
@@ -49,15 +40,15 @@ import {
   fatal,
   sectionHeader,
   step,
-  info,
   detail,
   success,
 } from "../helpers/log.js";
 import { deployKernelTestbed, type KernelTestContext } from "./setup.js";
+import { encodeExecMode, encodeSingleExec } from "../helpers/exec-encoding.js";
+import { sendFrameTx, kernelValidateVerify, kernelPermissionVerify } from "../helpers/send-frame-tx.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
-const HOOK_INSTALLED = "0x0000000000000000000000000000000000000001" as Address;
 const PERMISSION_ID = "0xdeadbeef" as Hex; // arbitrary 4-byte permission ID
 // ValidationId = 0x02 (PERMISSION type) + permissionId padded to 21 bytes
 const PERM_VID = `0x02${PERMISSION_ID.slice(2)}${"0".repeat(32)}` as Hex; // bytes21
@@ -66,125 +57,32 @@ const EXECUTE_SELECTOR = toFunctionSelector("execute(bytes32,bytes)");
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function encodeExecMode(callType: string, execType: string): Hex {
-  return padHex(`0x${callType.slice(2)}${execType.slice(2)}` as Hex, {
-    size: 32,
-    dir: "right",
+const sendRoot = (ctx: KernelTestContext, senderCalldata: Hex, senderGas?: bigint) =>
+  sendFrameTx({
+    publicClient: ctx.publicClient,
+    sender: ctx.kernelAddr,
+    senderCalldata,
+    senderGas,
+    buildVerifyData: kernelValidateVerify(),
   });
-}
 
-function encodeSingleExec(target: Address, value: bigint, data: Hex = "0x"): Hex {
-  const targetHex = target.slice(2).toLowerCase().padStart(40, "0");
-  const valueHex = value.toString(16).padStart(64, "0");
-  const dataHex = data.slice(2);
-  return `0x${targetHex}${valueHex}${dataHex}` as Hex;
-}
-
-/** Send frame tx validated by root validator. */
-async function sendRootFrameTx(
-  ctx: KernelTestContext,
-  senderCalldata: Hex,
-  senderGas = 500_000n
-): Promise<any> {
-  const { publicClient, kernelAddr } = ctx;
-  const kernelNonce = await publicClient.getTransactionCount({ address: kernelAddr });
-  const block = await publicClient.getBlock();
-  const gasFeeCap = block.baseFeePerGas! + 2_000_000_000n;
-
-  const frameTxParams: FrameTxParams = {
-    chainId: BigInt(CHAIN_ID),
-    nonce: BigInt(kernelNonce),
-    sender: kernelAddr,
-    gasTipCap: 1_000_000_000n,
-    gasFeeCap,
-    frames: [
-      { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 300_000n, data: new Uint8Array(0) },
-      { mode: FRAME_MODE_SENDER, target: null, gasLimit: senderGas, data: hexToBytes(senderCalldata) },
-    ],
-    blobFeeCap: 0n,
-    blobHashes: [],
-  };
-
-  const sigHash = computeSigHash(frameTxParams);
-  const { packed: packedSig } = signFrameHash(sigHash, DEV_KEY);
-  const validateCalldata = encodeFunctionData({
-    abi: kernelAbi,
-    functionName: "validate",
-    args: [bytesToHex(packedSig), 2],
+const sendPermission = (ctx: KernelTestContext, signingKey: Hex, senderCalldata: Hex, senderGas?: bigint) =>
+  sendFrameTx({
+    publicClient: ctx.publicClient,
+    sender: ctx.kernelAddr,
+    senderCalldata,
+    senderGas,
+    buildVerifyData: kernelPermissionVerify(PERMISSION_ID, signingKey),
   });
-  frameTxParams.frames[0].data = hexToBytes(validateCalldata);
-
-  const rawTx = encodeFrameTx(frameTxParams);
-  const txHash = (await publicClient.request({
-    method: "eth_sendRawTransaction" as any,
-    params: [rawTx],
-  })) as Hash;
-  return await waitForReceipt(publicClient, txHash);
-}
-
-/** Send frame tx validated by permission (validatePermission). */
-async function sendPermissionFrameTx(
-  ctx: KernelTestContext,
-  signingKey: Hex,
-  senderCalldata: Hex,
-  senderGas = 500_000n
-): Promise<any> {
-  const { publicClient, kernelAddr } = ctx;
-  const kernelNonce = await publicClient.getTransactionCount({ address: kernelAddr });
-  const block = await publicClient.getBlock();
-  const gasFeeCap = block.baseFeePerGas! + 2_000_000_000n;
-
-  const frameTxParams: FrameTxParams = {
-    chainId: BigInt(CHAIN_ID),
-    nonce: BigInt(kernelNonce),
-    sender: kernelAddr,
-    gasTipCap: 1_000_000_000n,
-    gasFeeCap,
-    frames: [
-      { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 300_000n, data: new Uint8Array(0) },
-      { mode: FRAME_MODE_SENDER, target: null, gasLimit: senderGas, data: hexToBytes(senderCalldata) },
-    ],
-    blobFeeCap: 0n,
-    blobHashes: [],
-  };
-
-  const sigHash = computeSigHash(frameTxParams);
-  const { packed: ecdsaSig } = signFrameHash(sigHash, signingKey);
-
-  // sig format for validatePermission:
-  // [0x02][4B permissionId][0xff signer prefix][65B ecdsa sig]
-  const permSig = concatHex([
-    PERMISSION_ID,    // 0x02 type is part of vId encoding, but validatePermission reads raw type+permId
-    "0xff",           // signer prefix (no policy sig data for SelectorPolicy)
-    bytesToHex(ecdsaSig),
-  ]);
-  // Full sig includes type byte: [0x02][4B permId][0xff][65B sig]
-  const fullSig = concatHex(["0x02", permSig]);
-
-  const validateCalldata = encodeFunctionData({
-    abi: kernelAbi,
-    functionName: "validatePermission",
-    args: [fullSig, 2],
-  });
-  frameTxParams.frames[0].data = hexToBytes(validateCalldata);
-
-  const rawTx = encodeFrameTx(frameTxParams);
-  const txHash = (await publicClient.request({
-    method: "eth_sendRawTransaction" as any,
-    params: [rawTx],
-  })) as Hash;
-  return await waitForReceipt(publicClient, txHash);
-}
 
 /** Send permission frame tx expecting failure. */
-async function sendPermissionFrameTxExpectFail(
+async function sendPermissionExpectFail(
   ctx: KernelTestContext,
   signingKey: Hex,
   senderCalldata: Hex,
-  senderGas = 500_000n
 ): Promise<boolean> {
   try {
-    const receipt = await sendPermissionFrameTx(ctx, signingKey, senderCalldata, senderGas);
+    const receipt = await sendPermission(ctx, signingKey, senderCalldata);
     detail(`Receipt status: ${receipt.status}`);
     if (receipt.frameReceipts) {
       for (let i = 0; i < receipt.frameReceipts.length; i++) {
@@ -269,7 +167,7 @@ async function main() {
       ["0x"],                        // hookData: bytes[]
     ],
   });
-  const installReceipt = await sendRootFrameTx(ctx, installCalldata, 1_000_000n);
+  const installReceipt = await sendRoot(ctx, installCalldata, 1_000_000n);
   verifyReceipt(installReceipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
   success("Permission installed");
 
@@ -284,7 +182,7 @@ async function main() {
       args: [PERM_VID, execMode, execCalldata],
     });
 
-    const receipt = await sendPermissionFrameTx(ctx, SECOND_OWNER_KEY as Hex, senderCalldata);
+    const receipt = await sendPermission(ctx, SECOND_OWNER_KEY as Hex, senderCalldata);
     printReceipt(receipt);
     verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
     passed++;
@@ -303,7 +201,7 @@ async function main() {
     });
 
     // Sign with DEV_KEY instead of SECOND_OWNER_KEY
-    const rejected = await sendPermissionFrameTxExpectFail(ctx, DEV_KEY as Hex, senderCalldata);
+    const rejected = await sendPermissionExpectFail(ctx, DEV_KEY as Hex, senderCalldata);
     if (rejected) {
       passed++;
       testPassed("Wrong signer correctly rejected");
@@ -324,7 +222,7 @@ async function main() {
       args: [execMode, execCalldata],
     });
 
-    const rejected = await sendPermissionFrameTxExpectFail(
+    const rejected = await sendPermissionExpectFail(
       ctx,
       SECOND_OWNER_KEY as Hex,
       senderCalldata

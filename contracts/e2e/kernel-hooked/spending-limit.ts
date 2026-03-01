@@ -14,85 +14,18 @@ import {
   encodeAbiParameters,
   parseAbiParameters,
   encodeFunctionData,
-  hexToBytes,
-  bytesToHex,
   parseEther,
   formatEther,
-  padHex,
   type Hex,
-  type Hash,
   type Address,
 } from "viem";
-import { CHAIN_ID, DEV_KEY, DEAD_ADDR, FRAME_MODE_VERIFY, FRAME_MODE_SENDER, CHAIN_DEF } from "../helpers/config.js";
+import { DEAD_ADDR, CHAIN_DEF } from "../helpers/config.js";
 import { createTestClients, waitForReceipt, fundAccount } from "../helpers/client.js";
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
-import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
-import { signFrameHash } from "../helpers/signing.js";
-import { printReceipt, verifyReceipt } from "../helpers/receipt.js";
+import { printReceipt, banner, sectionHeader, testHeader, step, info, testPassed, summary, fatal } from "../helpers/log.js";
 import { kernelAbi, factoryAbi } from "../helpers/abis/kernel.js";
-import { banner, sectionHeader, testHeader, step, info, testPassed, summary, fatal } from "../helpers/log.js";
-
-// ── ExecMode / execution calldata encoding ───────────────────────────
-function encodeSingleExec(target: Address, value: bigint, data: Hex = "0x"): Hex {
-  const targetHex = target.slice(2).toLowerCase().padStart(40, "0");
-  const valueHex = value.toString(16).padStart(64, "0");
-  const dataHex = data.slice(2);
-  return `0x${targetHex}${valueHex}${dataHex}` as Hex;
-}
-
-// ── Frame TX helpers ────────────────────────────────────────────────
-
-/**
- * Send a 2-frame hooked transaction (inline hook pattern):
- *   Frame 0: VERIFY(kernel) → kernel.validate(sig, 1)
- *   Frame 1: SENDER(kernel) → kernel.executeHooked(vId, mode, data)
- */
-async function sendHookedFrameTx(
-  publicClient: any,
-  kernelAddr: Address,
-  rootVId: Hex,
-  senderCalldata: Hex,
-  senderGas = 500_000n
-): Promise<any> {
-  const kernelNonce = await publicClient.getTransactionCount({ address: kernelAddr });
-  const block = await publicClient.getBlock();
-  const gasFeeCap = block.baseFeePerGas! + 2_000_000_000n;
-
-  const frameTxParams: FrameTxParams = {
-    chainId: BigInt(CHAIN_ID),
-    nonce: BigInt(kernelNonce),
-    sender: kernelAddr,
-    gasTipCap: 1_000_000_000n,
-    gasFeeCap,
-    frames: [
-      // Frame 0: VERIFY — kernel.validate() (data excluded from sigHash per spec)
-      { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 300_000n, data: new Uint8Array(0) },
-      // Frame 1: SENDER — kernel.executeHooked() (hook pre/post + execution, atomic)
-      { mode: FRAME_MODE_SENDER, target: null, gasLimit: senderGas, data: hexToBytes(senderCalldata) },
-    ],
-    blobFeeCap: 0n,
-    blobHashes: [],
-  };
-
-  // Compute sigHash (VERIFY data stays empty, SENDER data included)
-  const sigHash = computeSigHash(frameTxParams);
-  const { packed: packedSig } = signFrameHash(sigHash, DEV_KEY);
-  const validateCalldata = encodeFunctionData({
-    abi: kernelAbi,
-    functionName: "validate",
-    args: [bytesToHex(packedSig), 2],  // scope=2: approve both execution + payment
-  });
-  // Set VERIFY frame data (frame index 0)
-  frameTxParams.frames[0].data = hexToBytes(validateCalldata);
-
-  const rawTx = encodeFrameTx(frameTxParams);
-  const txHash = (await publicClient.request({
-    method: "eth_sendRawTransaction" as any,
-    params: [rawTx],
-  })) as Hash;
-
-  return waitForReceipt(publicClient, txHash);
-}
+import { encodeExecMode, encodeSingleExec } from "../helpers/exec-encoding.js";
+import { sendFrameTx, kernelValidateVerify } from "../helpers/send-frame-tx.js";
 
 async function main() {
   const { publicClient, walletClient, devAddr } = createTestClients();
@@ -171,8 +104,18 @@ async function main() {
   sectionHeader("💰 Fund Kernel");
   await fundAccount(walletClient, publicClient, kernelAddr);
 
+  // ── Helpers ──────────────────────────────────────────────────────────
+  const send = (senderCalldata: Hex, senderGas?: bigint) =>
+    sendFrameTx({
+      publicClient,
+      sender: kernelAddr,
+      senderCalldata,
+      senderGas,
+      buildVerifyData: kernelValidateVerify(),
+    });
+
   // ── Tests ──────────────────────────────────────────────────────────
-  const EXEC_MODE_SINGLE_DEFAULT = padHex("0x0000" as Hex, { size: 32, dir: "right" });
+  const EXEC_MODE_SINGLE_DEFAULT = encodeExecMode("0x00" as Hex, "0x00" as Hex);
 
   // Test 1: Transfer 3 ETH with inline hook pattern
   testHeader(1, "Transfer 3 ETH (VERIFY→SENDER, inline hook)");
@@ -183,7 +126,7 @@ async function main() {
       functionName: "executeHooked",
       args: [rootVId, EXEC_MODE_SINGLE_DEFAULT, execCalldata],
     });
-    const receipt = await sendHookedFrameTx(publicClient, kernelAddr, rootVId, senderCalldata);
+    const receipt = await send(senderCalldata);
     printReceipt(receipt);
     if (receipt.status !== "0x1") throw new Error("Transfer should succeed (within 5 ETH limit)");
     testPassed("3 ETH transferred with inline hook (VERIFY→SENDER)");
@@ -198,7 +141,7 @@ async function main() {
       functionName: "executeHooked",
       args: [rootVId, EXEC_MODE_SINGLE_DEFAULT, execCalldata],
     });
-    const receipt = await sendHookedFrameTx(publicClient, kernelAddr, rootVId, senderCalldata);
+    const receipt = await send(senderCalldata);
     printReceipt(receipt);
     if (receipt.status !== "0x1") throw new Error("Transfer should succeed (4.5 ETH < 5 ETH limit)");
     testPassed("1.5 ETH transferred (cumulative spending enforcement verified)");
@@ -213,7 +156,7 @@ async function main() {
       functionName: "executeHooked",
       args: [rootVId, EXEC_MODE_SINGLE_DEFAULT, execCalldata],
     });
-    const receipt = await sendHookedFrameTx(publicClient, kernelAddr, rootVId, senderCalldata);
+    const receipt = await send(senderCalldata);
     printReceipt(receipt);
     if (receipt.status !== "0x1") throw new Error("Zero-value call should succeed");
     testPassed("Zero-value call succeeded with inline hook");

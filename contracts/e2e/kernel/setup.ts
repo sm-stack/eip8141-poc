@@ -8,12 +8,9 @@ import {
 } from "viem";
 import { createTestClients, fundAccount, waitForReceipt } from "../helpers/client.js";
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
-import { CHAIN_DEF } from "../helpers/config.js";
+import { CHAIN_DEF, HOOK_INSTALLED } from "../helpers/config.js";
 import { banner, sectionHeader, step, info, success } from "../helpers/log.js";
 import { kernelAbi, factoryAbi } from "../helpers/abis/kernel.js";
-
-/** Sentinel: hook is installed but no real hook contract (preCheck/postCheck skipped). */
-const HOOK_INSTALLED = "0x0000000000000000000000000000000000000001" as Address;
 
 export type KernelTestContext = {
   publicClient: any;

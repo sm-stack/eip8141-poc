@@ -18,8 +18,7 @@ import {
   getContractAddress,
   hexToBytes,
   formatEther,
-  keccak256,
-  toHex,
+  toFunctionSelector,
   type Hex,
   type Address,
   type Hash,
@@ -37,33 +36,20 @@ import { createTestClients, waitForReceipt, fundAccount } from "../helpers/clien
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
 import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
 import { signFrameHash } from "../helpers/signing.js";
-import { printReceipt } from "../helpers/receipt.js";
 import { SIMPLE_VALIDATE_SELECTOR } from "../helpers/abis/simple.js";
 import { benchmarkTokenAbi } from "../helpers/abis/benchmark-token.js";
 import {
+  printReceipt,
   banner, sectionHeader, info, step, success,
   testHeader, testPassed, summary, detail, fatal,
 } from "../helpers/log.js";
 
 // ── Selectors ─────────────────────────────────────────────────────
 
-// ERC20Paymaster.validate() — no args
-const PAYMASTER_VALIDATE_SELECTOR = keccak256(
-  toHex(new TextEncoder().encode("validate()"))
-).slice(0, 10) as Hex;
-
-// ERC20Paymaster.postOp(uint256)
-const PAYMASTER_POSTOP_SELECTOR = keccak256(
-  toHex(new TextEncoder().encode("postOp(uint256)"))
-).slice(0, 10) as Hex;
-
-// ERC20Paymaster.setExchangeRate(address,uint256)
-const SET_EXCHANGE_RATE_SELECTOR = keccak256(
-  toHex(new TextEncoder().encode("setExchangeRate(address,uint256)"))
-).slice(0, 10) as Hex;
-
-// ERC20 transfer(address,uint256) = 0xa9059cbb
-const ERC20_TRANSFER_SELECTOR = "0xa9059cbb" as Hex;
+const PAYMASTER_VALIDATE_SELECTOR = toFunctionSelector("validate()");
+const PAYMASTER_POSTOP_SELECTOR = toFunctionSelector("postOp(uint256)");
+const SET_EXCHANGE_RATE_SELECTOR = toFunctionSelector("setExchangeRate(address,uint256)");
+const ERC20_TRANSFER_SELECTOR = toFunctionSelector("transfer(address,uint256)");
 
 async function main() {
   const { publicClient, walletClient, devAddr } = createTestClients();

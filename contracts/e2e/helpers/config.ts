@@ -19,6 +19,10 @@ export const FRAME_MODE_DEFAULT = 0x00;
 export const FRAME_MODE_VERIFY = 0x01;
 export const FRAME_MODE_SENDER = 0x02;
 
+/** Sentinel: hook slot is installed but no real hook contract (preCheck/postCheck skipped). */
+export const HOOK_INSTALLED =
+  "0x0000000000000000000000000000000000000001" as Address;
+
 export const CHAIN_DEF = {
   id: CHAIN_ID,
   name: "devnet",
