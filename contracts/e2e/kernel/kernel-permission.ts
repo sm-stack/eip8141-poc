@@ -1,10 +1,14 @@
 /**
  * E2E: Kernel8141 Permission System (ECDSASigner8141 + SelectorPolicy8141)
  *
+ * Tests permission-based frame tx validation using the inline hook model:
+ *   Frame 0: VERIFY(kernel)  → validatePermission(sig, 2)   → enforces executeHooked selector
+ *   Frame 1: SENDER(kernel)  → executeHooked(vId, mode, data) → policy consume + execution
+ *
  * Tests:
- * 1. Install permission and execute with correct signer + allowed selector
+ * 1. Install permission and execute via executeHooked with correct signer
  * 2. Wrong signer rejected
- * 3. Disallowed selector rejected
+ * 3. Non-executeHooked SENDER selector rejected (enforcePermissionExecution)
  *
  * Usage: cd contracts && npx tsx e2e/kernel/kernel-permission.ts
  */
@@ -59,9 +63,6 @@ const PERMISSION_ID = "0xdeadbeef" as Hex; // arbitrary 4-byte permission ID
 const PERM_VID = `0x02${PERMISSION_ID.slice(2)}${"0".repeat(32)}` as Hex; // bytes21
 
 const EXECUTE_SELECTOR = toFunctionSelector("execute(bytes32,bytes)");
-const CHANGE_ROOT_SELECTOR = toFunctionSelector(
-  "changeRootValidator(bytes21,address,bytes,bytes)"
-);
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -241,7 +242,7 @@ async function main() {
   // data[1] = signer entry: [2B PassFlag][20B signerAddr][extra: 20B signerAddress]
   // PassFlag 0x0001 = SKIP_FRAMETX: skip policy during frame tx validation.
   // SelectorPolicy's triple-nested mapping triggers STO-021 in VERIFY frames.
-  // The kernel's own allowedSelectors ACL (grantAccess) handles frame tx selector checks.
+  // Frame tx selector enforcement is handled by _enforcePermissionExecution (executeHooked only).
   const policyEntry = concatHex([
     "0x0001",            // PassFlag: SKIP_FRAMETX (policy checked in ERC-1271 only)
     policyAddr as Hex,   // SelectorPolicy address
@@ -272,33 +273,22 @@ async function main() {
   verifyReceipt(installReceipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
   success("Permission installed");
 
-  // Grant selector access for execute()
-  step("Granting selector access for execute()...");
-  const grantCalldata = encodeFunctionData({
-    abi: kernelAbi,
-    functionName: "grantAccess",
-    args: [PERM_VID, EXECUTE_SELECTOR, true],
-  });
-  const grantReceipt = await sendRootFrameTx(ctx, grantCalldata);
-  verifyReceipt(grantReceipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
-  success("Selector access granted");
-
-  // ── Test 1: Permission-based execution succeeds ─────────────────────
-  testHeader(++total, "Permission-based execution with correct signer + allowed selector");
+  // ── Test 1: Permission-based execution via executeHooked ────────────
+  testHeader(++total, "Permission-based execution via executeHooked with correct signer");
   {
     const execMode = encodeExecMode("0x00", "0x00"); // SINGLE + DEFAULT
     const execCalldata = encodeSingleExec(DEAD_ADDR, 0n);
     const senderCalldata = encodeFunctionData({
       abi: kernelAbi,
-      functionName: "execute",
-      args: [execMode, execCalldata],
+      functionName: "executeHooked",
+      args: [PERM_VID, execMode, execCalldata],
     });
 
     const receipt = await sendPermissionFrameTx(ctx, SECOND_OWNER_KEY as Hex, senderCalldata);
     printReceipt(receipt);
     verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
     passed++;
-    testPassed("Permission-based execution succeeded");
+    testPassed("Permission-based execution via executeHooked succeeded");
   }
 
   // ── Test 2: Wrong signer rejected ──────────────────────────────────
@@ -308,8 +298,8 @@ async function main() {
     const execCalldata = encodeSingleExec(DEAD_ADDR, 0n);
     const senderCalldata = encodeFunctionData({
       abi: kernelAbi,
-      functionName: "execute",
-      args: [execMode, execCalldata],
+      functionName: "executeHooked",
+      args: [PERM_VID, execMode, execCalldata],
     });
 
     // Sign with DEV_KEY instead of SECOND_OWNER_KEY
@@ -322,19 +312,16 @@ async function main() {
     }
   }
 
-  // ── Test 3: Disallowed selector rejected ───────────────────────────
-  testHeader(++total, "Disallowed selector rejected (permission)");
+  // ── Test 3: Non-executeHooked SENDER selector rejected ─────────────
+  testHeader(++total, "Non-executeHooked SENDER selector rejected (enforcePermissionExecution)");
   {
-    // Use changeRootValidator which is NOT in the allowed selector list
+    // Use execute() instead of executeHooked() — _enforcePermissionExecution rejects
+    const execMode = encodeExecMode("0x00", "0x00");
+    const execCalldata = encodeSingleExec(DEAD_ADDR, 0n);
     const senderCalldata = encodeFunctionData({
       abi: kernelAbi,
-      functionName: "changeRootValidator",
-      args: [
-        PERM_VID,       // arbitrary validator id
-        HOOK_INSTALLED, // hook
-        "0x",           // validatorData
-        "0x",           // hookData
-      ],
+      functionName: "execute",
+      args: [execMode, execCalldata],
     });
 
     const rejected = await sendPermissionFrameTxExpectFail(
@@ -344,9 +331,9 @@ async function main() {
     );
     if (rejected) {
       passed++;
-      testPassed("Disallowed selector correctly rejected");
+      testPassed("Non-executeHooked selector correctly rejected");
     } else {
-      testFailed("Disallowed selector was NOT rejected!");
+      testFailed("Non-executeHooked selector was NOT rejected!");
     }
   }
 

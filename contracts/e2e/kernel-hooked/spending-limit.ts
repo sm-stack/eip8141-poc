@@ -80,7 +80,7 @@ async function sendHookedFrameTx(
   const validateCalldata = encodeFunctionData({
     abi: kernelAbi,
     functionName: "validate",
-    args: [bytesToHex(packedSig), 1],  // scope=1: approve frames 0-1
+    args: [bytesToHex(packedSig), 2],  // scope=2: approve both execution + payment
   });
   // Set VERIFY frame data (frame index 0)
   frameTxParams.frames[0].data = hexToBytes(validateCalldata);
