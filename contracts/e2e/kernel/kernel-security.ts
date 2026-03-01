@@ -10,21 +10,25 @@
 
 import {
   encodeFunctionData,
-  hexToBytes,
-  bytesToHex,
+  parseSignature,
   type Hex,
   type Hash,
   type Address,
 } from "viem";
-import { CHAIN_ID, DEV_KEY, SECOND_OWNER_KEY, DEAD_ADDR, FRAME_MODE_VERIFY, FRAME_MODE_SENDER } from "../helpers/config.js";
+import { privateKeyToAccount } from "viem/accounts";
+import {
+  computeSigHash,
+  serializeFrameTransaction,
+  type TransactionSerializableFrame,
+} from "viem/eip8141";
+import { CHAIN_ID, DEV_KEY, SECOND_OWNER_KEY, DEAD_ADDR } from "../helpers/config.js";
 import { waitForReceipt } from "../helpers/client.js";
-import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
-import { signFrameHash } from "../helpers/signing.js";
 import { verifyReceipt } from "../helpers/receipt.js";
 import { kernelAbi } from "../helpers/abis/kernel.js";
 import { printReceipt, testHeader, testPassed, testFailed, summary, fatal, detail } from "../helpers/log.js";
 import { deployKernelTestbed, type KernelTestContext } from "./setup.js";
 import { encodeExecMode, encodeSingleExec } from "../helpers/exec-encoding.js";
+import { createKernelAccount, sendAndWait } from "../helpers/send-frame-tx.js";
 
 // secp256k1 curve order
 const SECP256K1_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
@@ -33,44 +37,43 @@ const SECP256K1_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0
 async function buildFrameTxParams(
   ctx: KernelTestContext,
   senderCalldata: Hex,
-): Promise<{ params: FrameTxParams; sigHash: Hex }> {
+): Promise<{ tx: TransactionSerializableFrame; sigHash: Hex }> {
   const { publicClient, kernelAddr } = ctx;
   const kernelNonce = await publicClient.getTransactionCount({ address: kernelAddr });
   const block = await publicClient.getBlock();
   const gasFeeCap = block.baseFeePerGas! + 2_000_000_000n;
 
-  const params: FrameTxParams = {
-    chainId: BigInt(CHAIN_ID),
-    nonce: BigInt(kernelNonce),
+  const tx: TransactionSerializableFrame = {
+    chainId: CHAIN_ID,
+    nonce: kernelNonce,
     sender: kernelAddr,
-    gasTipCap: 1_000_000_000n,
-    gasFeeCap,
+    maxPriorityFeePerGas: 1_000_000_000n,
+    maxFeePerGas: gasFeeCap,
     frames: [
-      { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 300_000n, data: new Uint8Array(0) },
-      { mode: FRAME_MODE_SENDER, target: null, gasLimit: 500_000n, data: hexToBytes(senderCalldata) },
+      { mode: "verify", target: null, gasLimit: 300_000n, data: "0x" },
+      { mode: "sender", target: null, gasLimit: 500_000n, data: senderCalldata },
     ],
-    blobFeeCap: 0n,
-    blobHashes: [],
+    type: "frame",
   };
 
-  const sigHash = computeSigHash(params);
-  return { params, sigHash };
+  const sigHash = computeSigHash(tx);
+  return { tx, sigHash };
 }
 
 /** Send a frame tx with a pre-built packed signature. Expects failure (revert/rejection). */
 async function sendFrameTxExpectFail(
   ctx: KernelTestContext,
-  params: FrameTxParams,
-  packedSig: Uint8Array,
+  tx: TransactionSerializableFrame,
+  packedSig: Hex,
 ): Promise<boolean> {
   const validateCalldata = encodeFunctionData({
     abi: kernelAbi,
     functionName: "validate",
-    args: [bytesToHex(packedSig), 2],
+    args: [packedSig, 2],
   });
-  params.frames[0].data = hexToBytes(validateCalldata);
+  tx.frames[0].data = validateCalldata;
 
-  const rawTx = encodeFrameTx(params);
+  const rawTx = serializeFrameTransaction(tx);
   try {
     const txHash = (await ctx.publicClient.request({
       method: "eth_sendRawTransaction" as any,
@@ -116,26 +119,28 @@ async function main() {
   // ── Test 1: Reject malleable (high-s) ECDSA signature ───────────────
   testHeader(++total, "Reject malleable (high-s) ECDSA signature");
   {
-    const { params, sigHash } = await buildFrameTxParams(ctx, senderCalldata);
+    const { tx, sigHash } = await buildFrameTxParams(ctx, senderCalldata);
 
-    // Sign normally (low-s, as @noble/curves enforces)
-    const { r, s, v } = signFrameHash(sigHash, DEV_KEY);
+    // Sign normally (low-s, as viem enforces)
+    const owner = privateKeyToAccount(DEV_KEY);
+    const serializedSig = await owner.sign({ hash: sigHash });
+    const { r, s: sHex, yParity } = parseSignature(serializedSig);
 
-    // Create high-s variant: s_high = n - s, v_flipped = 1 - v
+    const s = BigInt(sHex);
+
+    // Create high-s variant: s_high = n - s, v_flipped = 1 - yParity
     const sHigh = SECP256K1_N - s;
-    const vFlipped = 1 - v;
+    const vFlipped = 1 - yParity;
 
-    const rHex = r.toString(16).padStart(64, "0");
+    const rHexStr = r.slice(2);
     const sHighHex = sHigh.toString(16).padStart(64, "0");
-    const malleableSig = hexToBytes(
-      ("0x" + rHex + sHighHex + vFlipped.toString(16).padStart(2, "0")) as Hex
-    );
+    const malleableSig = ("0x" + rHexStr + sHighHex + vFlipped.toString(16).padStart(2, "0")) as Hex;
 
     detail(`Original s:  0x${s.toString(16).slice(0, 16)}...`);
     detail(`Malleable s: 0x${sHigh.toString(16).slice(0, 16)}...`);
     detail(`Half-n:      0x7fffffffffffffffffffffffffffffff5d576e73...`);
 
-    const rejected = await sendFrameTxExpectFail(ctx, params, malleableSig);
+    const rejected = await sendFrameTxExpectFail(ctx, tx, malleableSig);
     if (rejected) {
       passed++;
       testPassed("Malleable signature correctly rejected");
@@ -147,12 +152,13 @@ async function main() {
   // ── Test 2: Reject wrong signer ──────────────────────────────────────
   testHeader(++total, "Reject wrong signer");
   {
-    const { params, sigHash } = await buildFrameTxParams(ctx, senderCalldata);
+    const { tx, sigHash } = await buildFrameTxParams(ctx, senderCalldata);
 
     // Sign with a different key (not the registered owner)
-    const { packed: wrongSig } = signFrameHash(sigHash, SECOND_OWNER_KEY);
+    const wrongOwner = privateKeyToAccount(SECOND_OWNER_KEY);
+    const wrongSig = await wrongOwner.sign({ hash: sigHash });
 
-    const rejected = await sendFrameTxExpectFail(ctx, params, wrongSig);
+    const rejected = await sendFrameTxExpectFail(ctx, tx, wrongSig);
     if (rejected) {
       passed++;
       testPassed("Wrong signer correctly rejected");
@@ -164,22 +170,8 @@ async function main() {
   // ── Test 3: Valid signature still works ──────────────────────────────
   testHeader(++total, "Valid signature still accepted (sanity check)");
   {
-    const { params, sigHash } = await buildFrameTxParams(ctx, senderCalldata);
-    const { packed: validSig } = signFrameHash(sigHash, DEV_KEY);
-
-    const validateCalldata2 = encodeFunctionData({
-      abi: kernelAbi,
-      functionName: "validate",
-      args: [bytesToHex(validSig), 2],
-    });
-    params.frames[0].data = hexToBytes(validateCalldata2);
-
-    const rawTx = encodeFrameTx(params);
-    const txHash = (await ctx.publicClient.request({
-      method: "eth_sendRawTransaction" as any,
-      params: [rawTx],
-    })) as Hash;
-    const receipt = await waitForReceipt(ctx.publicClient, txHash);
+    const account = createKernelAccount(ctx.kernelAddr);
+    const receipt = await sendAndWait(ctx.publicClient, account, senderCalldata);
     printReceipt(receipt);
     verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
     passed++;

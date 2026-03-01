@@ -18,21 +18,17 @@ import { kernelAbi } from "../helpers/abis/kernel.js";
 import { printReceipt, testHeader, testPassed, summary, fatal } from "../helpers/log.js";
 import { deployKernelTestbed, type KernelTestContext } from "./setup.js";
 import { encodeExecMode, encodeSingleExec, encodeBatchExec } from "../helpers/exec-encoding.js";
-import { sendFrameTx, kernelValidateVerify } from "../helpers/send-frame-tx.js";
+import { createKernelAccount, sendAndWait } from "../helpers/send-frame-tx.js";
 
 const CALLTYPE_SINGLE   = "0x00" as Hex;
 const CALLTYPE_BATCH    = "0x01" as Hex;
 const EXECTYPE_DEFAULT  = "0x00" as Hex;
 const EXECTYPE_TRY      = "0x01" as Hex;
 
-const send = (ctx: KernelTestContext, senderCalldata: Hex, senderGas?: bigint) =>
-  sendFrameTx({
-    publicClient: ctx.publicClient,
-    sender: ctx.kernelAddr,
-    senderCalldata,
-    senderGas,
-    buildVerifyData: kernelValidateVerify(),
-  });
+const send = (ctx: KernelTestContext, senderCalldata: Hex) => {
+  const account = createKernelAccount(ctx.kernelAddr);
+  return sendAndWait(ctx.publicClient, account, senderCalldata);
+};
 
 async function main() {
   const ctx = await deployKernelTestbed();
@@ -41,9 +37,6 @@ async function main() {
   // ── Test 1: Install DefaultExecutor ────────────────────────────────
   testHeader(testNum++, "Install DefaultExecutor");
   {
-    // installModule(2=EXECUTOR, module, initData)
-    // initData = [20B hookAddr][abi.encode(executorData, hookData)]
-    // HOOK_INSTALLED imported from config
     const structData = encodeAbiParameters(
       parseAbiParameters("bytes, bytes"),
       ["0x", "0x"]
@@ -100,7 +93,6 @@ async function main() {
   testHeader(testNum++, "executeTry (single) — graceful failure");
   {
     const execMode = encodeExecMode(CALLTYPE_SINGLE, EXECTYPE_TRY);
-    // Call to address(1) with bogus data — will fail but try mode catches it
     const execCalldata = encodeSingleExec(
       "0x0000000000000000000000000000000000000001" as Address,
       0n,

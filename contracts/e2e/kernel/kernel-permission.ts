@@ -45,7 +45,7 @@ import {
 } from "../helpers/log.js";
 import { deployKernelTestbed, type KernelTestContext } from "./setup.js";
 import { encodeExecMode, encodeSingleExec } from "../helpers/exec-encoding.js";
-import { sendFrameTx, kernelValidateVerify, kernelPermissionVerify } from "../helpers/send-frame-tx.js";
+import { createKernelAccount, createKernelPermissionAccount, sendAndWait } from "../helpers/send-frame-tx.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -57,23 +57,15 @@ const EXECUTE_SELECTOR = toFunctionSelector("execute(bytes32,bytes)");
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-const sendRoot = (ctx: KernelTestContext, senderCalldata: Hex, senderGas?: bigint) =>
-  sendFrameTx({
-    publicClient: ctx.publicClient,
-    sender: ctx.kernelAddr,
-    senderCalldata,
-    senderGas,
-    buildVerifyData: kernelValidateVerify(),
-  });
+const sendRoot = (ctx: KernelTestContext, senderCalldata: Hex, senderGas?: bigint) => {
+  const account = createKernelAccount(ctx.kernelAddr, undefined, senderGas ? { senderGas } : {});
+  return sendAndWait(ctx.publicClient, account, senderCalldata);
+};
 
-const sendPermission = (ctx: KernelTestContext, signingKey: Hex, senderCalldata: Hex, senderGas?: bigint) =>
-  sendFrameTx({
-    publicClient: ctx.publicClient,
-    sender: ctx.kernelAddr,
-    senderCalldata,
-    senderGas,
-    buildVerifyData: kernelPermissionVerify(PERMISSION_ID, signingKey),
-  });
+const sendPermission = (ctx: KernelTestContext, signingKey: Hex, senderCalldata: Hex) => {
+  const account = createKernelPermissionAccount(ctx.kernelAddr, PERMISSION_ID, signingKey);
+  return sendAndWait(ctx.publicClient, account, senderCalldata);
+};
 
 /** Send permission frame tx expecting failure. */
 async function sendPermissionExpectFail(

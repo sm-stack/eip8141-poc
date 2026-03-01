@@ -2,7 +2,6 @@ import { getContractAddress, type Hex, type Address, type Hash } from "viem";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { CHAIN_DEF } from "./config.js";
 import { waitForReceipt } from "./client.js";
 import { deploy as logDeploy } from "./log.js";
 
@@ -45,7 +44,6 @@ export async function deployContract(
   });
 
   const hash = await walletClient.sendTransaction({
-    chain: CHAIN_DEF,
     data: bytecode,
     gas,
     maxFeePerGas: 10_000_000_000n,

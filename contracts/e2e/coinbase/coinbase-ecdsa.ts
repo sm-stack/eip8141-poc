@@ -14,18 +14,15 @@ import { verifyReceipt } from "../helpers/receipt.js";
 import { walletAbi } from "../helpers/abis/coinbase.js";
 import { printReceipt, testHeader, testPassed, summary, fatal } from "../helpers/log.js";
 import { deployCoinbaseTestbed } from "./setup.js";
-import { sendFrameTx, coinbaseVerify } from "../helpers/send-frame-tx.js";
+import { createCoinbaseAccount, sendAndWait } from "../helpers/send-frame-tx.js";
 
 async function main() {
   const ctx = await deployCoinbaseTestbed();
 
-  const send = (senderCalldata: Hex, ownerIndex: number, privKey: Hex) =>
-    sendFrameTx({
-      publicClient: ctx.publicClient,
-      sender: ctx.walletAddr,
-      senderCalldata,
-      buildVerifyData: coinbaseVerify(ownerIndex, privKey),
-    });
+  const send = (senderCalldata: Hex, ownerIndex: number, privKey: Hex) => {
+    const account = createCoinbaseAccount(ctx.walletAddr, ownerIndex, privKey);
+    return sendAndWait(ctx.publicClient, account, senderCalldata);
+  };
 
   testHeader(1, "Execute with ECDSA Owner 1");
   {

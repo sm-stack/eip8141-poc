@@ -7,7 +7,8 @@ import {
   type Address,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { RPC_URL, DEV_KEY, CHAIN_DEF } from "./config.js";
+import { eip8141Devnet, frameActions } from "viem/eip8141";
+import { RPC_URL, DEV_KEY } from "./config.js";
 import { fund as logFund } from "./log.js";
 
 export async function waitForReceipt(
@@ -34,8 +35,15 @@ export async function waitForReceipt(
 export function createTestClients() {
   const account = privateKeyToAccount(DEV_KEY);
   const devAddr = account.address;
-  const publicClient = createPublicClient({ transport: http(RPC_URL) });
-  const walletClient = createWalletClient({ account, transport: http(RPC_URL) });
+  const publicClient = createPublicClient({
+    chain: eip8141Devnet,
+    transport: http(RPC_URL),
+  }).extend(frameActions());
+  const walletClient = createWalletClient({
+    account,
+    chain: eip8141Devnet,
+    transport: http(RPC_URL),
+  });
   return { account, publicClient, walletClient, devAddr };
 }
 
@@ -46,7 +54,6 @@ export async function fundAccount(
   ethAmount = "10"
 ): Promise<void> {
   const fundHash = await walletClient.sendTransaction({
-    chain: CHAIN_DEF,
     to,
     value: parseEther(ethAmount),
     gas: 50_000n,

@@ -19,13 +19,13 @@ import {
   type Hex,
   type Address,
 } from "viem";
-import { DEAD_ADDR, CHAIN_DEF } from "../helpers/config.js";
+import { DEAD_ADDR } from "../helpers/config.js";
 import { createTestClients, waitForReceipt, fundAccount } from "../helpers/client.js";
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
 import { printReceipt, banner, sectionHeader, testHeader, step, info, testPassed, summary, fatal } from "../helpers/log.js";
 import { kernelAbi, factoryAbi } from "../helpers/abis/kernel.js";
 import { encodeExecMode, encodeSingleExec } from "../helpers/exec-encoding.js";
-import { sendFrameTx, kernelValidateVerify } from "../helpers/send-frame-tx.js";
+import { createKernelAccount, sendAndWait } from "../helpers/send-frame-tx.js";
 
 async function main() {
   const { publicClient, walletClient, devAddr } = createTestClients();
@@ -86,7 +86,6 @@ async function main() {
   step(`Predicted kernel address: ${kernelAddr}`);
 
   const createHash = await walletClient.sendTransaction({
-    chain: CHAIN_DEF,
     to: factoryAddr,
     data: encodeFunctionData({
       abi: factoryAbi,
@@ -105,14 +104,10 @@ async function main() {
   await fundAccount(walletClient, publicClient, kernelAddr);
 
   // ── Helpers ──────────────────────────────────────────────────────────
-  const send = (senderCalldata: Hex, senderGas?: bigint) =>
-    sendFrameTx({
-      publicClient,
-      sender: kernelAddr,
-      senderCalldata,
-      senderGas,
-      buildVerifyData: kernelValidateVerify(),
-    });
+  const send = (senderCalldata: Hex, senderGas?: bigint) => {
+    const account = createKernelAccount(kernelAddr, undefined, { senderGas });
+    return sendAndWait(publicClient, account, senderCalldata);
+  };
 
   // ── Tests ──────────────────────────────────────────────────────────
   const EXEC_MODE_SINGLE_DEFAULT = encodeExecMode("0x00" as Hex, "0x00" as Hex);

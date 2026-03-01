@@ -14,18 +14,6 @@ export const OWNER2_KEY =
 export const DEAD_ADDR =
   "0x000000000000000000000000000000000000dEaD" as Address;
 
-export const FRAME_TX_TYPE = 0x06;
-export const FRAME_MODE_DEFAULT = 0x00;
-export const FRAME_MODE_VERIFY = 0x01;
-export const FRAME_MODE_SENDER = 0x02;
-
 /** Sentinel: hook slot is installed but no real hook contract (preCheck/postCheck skipped). */
 export const HOOK_INSTALLED =
   "0x0000000000000000000000000000000000000001" as Address;
-
-export const CHAIN_DEF = {
-  id: CHAIN_ID,
-  name: "devnet",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: [RPC_URL] } },
-};

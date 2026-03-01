@@ -12,6 +12,6 @@
   },
   "dependencies": {
     "@noble/curves": "^1.4.0",
-    "viem": "^2.0.0"
+    "viem": "file:../viem-eip8141/src"
   }
 }

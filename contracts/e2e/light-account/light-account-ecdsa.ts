@@ -14,18 +14,15 @@ import { verifyReceipt } from "../helpers/receipt.js";
 import { walletAbi } from "../helpers/abis/light-account.js";
 import { printReceipt, testHeader, testPassed, summary, fatal } from "../helpers/log.js";
 import { deployLightAccountTestbed } from "./setup.js";
-import { sendFrameTx, lightAccountVerify } from "../helpers/send-frame-tx.js";
+import { createLightAccount, sendAndWait } from "../helpers/send-frame-tx.js";
 
 async function main() {
   const ctx = await deployLightAccountTestbed();
 
-  const send = (senderCalldata: Hex, privKey: Hex = DEV_KEY) =>
-    sendFrameTx({
-      publicClient: ctx.publicClient,
-      sender: ctx.walletAddr,
-      senderCalldata,
-      buildVerifyData: lightAccountVerify(privKey),
-    });
+  const send = (senderCalldata: Hex, privKey: Hex = DEV_KEY) => {
+    const account = createLightAccount(ctx.walletAddr, privKey);
+    return sendAndWait(ctx.publicClient, account, senderCalldata);
+  };
 
   testHeader(1, "Execute ETH transfer with EOA owner");
   {

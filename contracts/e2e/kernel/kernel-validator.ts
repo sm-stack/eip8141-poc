@@ -18,34 +18,25 @@ import { SECOND_OWNER_KEY, DEAD_ADDR, HOOK_INSTALLED } from "../helpers/config.j
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
 import { verifyReceipt } from "../helpers/receipt.js";
 import { kernelAbi } from "../helpers/abis/kernel.js";
-import { printReceipt, sectionHeader, testHeader, step, info, testPassed, summary, fatal } from "../helpers/log.js";
+import { printReceipt, testHeader, step, info, testPassed, summary, fatal } from "../helpers/log.js";
 import { deployKernelTestbed, type KernelTestContext } from "./setup.js";
 import { encodeExecMode, encodeSingleExec } from "../helpers/exec-encoding.js";
-import { sendFrameTx, kernelValidateVerify, kernelValidatorVerify } from "../helpers/send-frame-tx.js";
+import { createKernelAccount, createKernelValidatorAccount, sendAndWait } from "../helpers/send-frame-tx.js";
 
-const sendRoot = (ctx: KernelTestContext, senderCalldata: Hex, senderGas?: bigint) =>
-  sendFrameTx({
-    publicClient: ctx.publicClient,
-    sender: ctx.kernelAddr,
-    senderCalldata,
-    senderGas,
-    buildVerifyData: kernelValidateVerify(),
-  });
+const sendRoot = (ctx: KernelTestContext, calldata: Hex) => {
+  const account = createKernelAccount(ctx.kernelAddr);
+  return sendAndWait(ctx.publicClient, account, calldata);
+};
 
 const sendWithValidator = (
   ctx: KernelTestContext,
   signingKey: Hex,
   validatorAddr: Address,
-  senderCalldata: Hex,
-  senderGas = 700_000n,
-) =>
-  sendFrameTx({
-    publicClient: ctx.publicClient,
-    sender: ctx.kernelAddr,
-    senderCalldata,
-    senderGas,
-    buildVerifyData: kernelValidatorVerify(validatorAddr, signingKey),
-  });
+  calldata: Hex,
+) => {
+  const account = createKernelValidatorAccount(ctx.kernelAddr, validatorAddr, signingKey);
+  return sendAndWait(ctx.publicClient, account, calldata);
+};
 
 async function main() {
   const ctx = await deployKernelTestbed();
