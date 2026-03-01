@@ -1,4 +1,5 @@
-.PHONY: build build-geth build-solc submodules clean clean-geth clean-solc \
+.PHONY: build build-geth build-solc build-viem submodules install-deps \
+       clean clean-geth clean-solc clean-viem \
        contracts test devnet devnet-stop \
        e2e e2e-simple e2e-kernel e2e-kernel-validator e2e-hooked \
        e2e-coinbase-ecdsa e2e-coinbase-webauthn e2e-light-account \
@@ -9,13 +10,18 @@ BUILD_DIR := $(CURDIR)/build
 GETH_BIN := $(BUILD_DIR)/bin/geth
 SOLC_BIN := $(BUILD_DIR)/bin/solc
 
-build: submodules build-geth build-solc
+build: submodules install-deps build-geth build-solc build-viem
 	@echo "Build complete."
 	@echo "  geth: $(GETH_BIN)"
 	@echo "  solc: $(SOLC_BIN)"
+	@echo "  viem: viem-eip8141/src (_esm, _cjs, _types)"
 
 submodules:
 	git submodule update --init --recursive
+
+install-deps:
+	cd viem-eip8141 && pnpm install --frozen-lockfile
+	cd contracts && npm ci
 
 build-geth:
 	$(MAKE) -C 8141-geth geth
@@ -28,6 +34,9 @@ build-solc:
 	$(MAKE) -C $(BUILD_DIR)/solc solc
 	@mkdir -p $(BUILD_DIR)/bin
 	cp $(BUILD_DIR)/solc/solc/solc $(SOLC_BIN)
+
+build-viem:
+	cd viem-eip8141 && pnpm build
 
 contracts:
 	cd contracts && forge build
@@ -77,7 +86,7 @@ e2e:
 benchmark:
 	cd contracts && npx tsx e2e/benchmark/gas-benchmark.ts
 
-clean: clean-geth clean-solc
+clean: clean-geth clean-solc clean-viem
 
 clean-geth:
 	rm -f $(GETH_BIN)
@@ -86,3 +95,6 @@ clean-geth:
 clean-solc:
 	rm -f $(SOLC_BIN)
 	rm -rf $(BUILD_DIR)/solc
+
+clean-viem:
+	cd viem-eip8141 && pnpm clean

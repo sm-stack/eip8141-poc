@@ -114,17 +114,19 @@ A dedicated transaction pool for frame transactions, separate from the legacy an
 **Pool limits:**
 - 4 pending frame transactions per sender (per ERC-7562 `SAME_SENDER_MEMPOOL_COUNT`)
 - 256 total pooled frame transactions
-- 500,000 gas cap per VERIFY frame (`MAX_VERIFICATION_GAS`)
+- 500,000 gas cap per VERIFY frame (`verifyFrameGasCap`)
+- 500,000 gas cap per DEFAULT frame (`defaultFrameGasCap`)
 - 512 KB max transaction size
 
-**Admission flow:**
+**Admission flow (two-phase simulation):**
 1. Basic validation (size, gas, chain ID)
-2. Simulate each VERIFY frame with the ERC-7562 validation tracer
-3. Reject if any VERIFY frame violates validation rules
-4. Reject if any VERIFY frame doesn't exit with APPROVE (status 2-4)
-5. Check per-sender and global pool limits
+2. **Phase 1: Pre-execute DEFAULT frames** appearing before the first VERIFY frame. These are deploy/setup frames (analogous to ERC-4337 `initCode`) whose side-effects (e.g., deployed contract code) must be visible to VERIFY frames. Each DEFAULT frame's gas is checked against `defaultFrameGasCap`. The resulting state is captured as `baseState`.
+3. **Phase 2: Simulate each VERIFY frame** against a copy of `baseState` with the ERC-7562 validation tracer. DEFAULT frames after the first VERIFY are skipped (e.g., paymaster `postOp` frames that depend on SENDER frame state changes).
+4. Reject if any VERIFY frame violates validation rules
+5. Reject if any VERIFY frame doesn't exit with APPROVE (status 2-4)
+6. Check per-sender and global pool limits
 
-The simulation runs on a copy of the state to avoid polluting the pool.
+The two-phase approach enables deploy-in-one-tx patterns where account deployment (DEFAULT frame) and validation (VERIFY frame) occur in the same transaction. The simulation runs on a copy of the state to avoid polluting the pool.
 
 ### ERC-7562 Validation Tracer
 
@@ -134,8 +136,9 @@ The validation tracer enforces ERC-7562 rules during VERIFY frame simulation in 
 
 **Banned opcodes [OP-011]:**
 Forbidden in VERIFY frames to prevent context-dependent validation:
-- `ORIGIN`, `GASPRICE`, `BLOCKHASH`, `COINBASE`, `TIMESTAMP`, `NUMBER`, `PREVRANDAO`, `GASLIMIT`, `BASEFEE`, `BLOBHASH`
+- `ORIGIN`, `GASPRICE`, `BLOCKHASH`, `COINBASE`, `TIMESTAMP`, `NUMBER`, `PREVRANDAO`, `GASLIMIT`, `BASEFEE`, `BLOBHASH`, `BLOBBASEFEE`
 - `CREATE`, `CREATE2`, `SELFDESTRUCT`, `INVALID`
+- `BALANCE`, `SELFBALANCE` [OP-080]
 
 **GAS usage restriction [OP-012]:**
 The `GAS` opcode must immediately precede a `CALL` opcode. This prevents gas limit probing which could make validation results differ between mempool simulation and block execution.
@@ -146,8 +149,8 @@ If a VERIFY frame runs out of gas during mempool simulation, the transaction is 
 **EXTCODE/CALL target validation [OP-041]:**
 Targets of `EXTCODESIZE`, `EXTCODECOPY`, `EXTCODEHASH`, and `CALL` must have deployed code. Exception: precompiles and the sender address (OP-042).
 
-**BALANCE forbidden [OP-080]:**
-`BALANCE` and `SELFBALANCE` are forbidden to prevent balance-dependent validation.
+**BALANCE restriction [OP-080]:**
+`BALANCE` and `SELFBALANCE` are included in the banned opcodes map to prevent balance-dependent validation that could differ between mempool simulation and block execution.
 
 **Sender storage access [STO-010]:**
 `SLOAD` from the sender's own storage is always permitted.

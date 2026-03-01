@@ -10,25 +10,35 @@ A reference implementation for [EIP-8141](https://github.com/ethereum/EIPs/pull/
 ```
 ├── 8141-geth/             # Modified go-ethereum with frame transaction support
 ├── solidity-eip8141/      # Modified solc with EIP-8141 opcodes (APPROVE, TXPARAMLOAD, ...)
+├── viem-eip8141/          # Modified viem with frame transaction client support
 ├── contracts/             # Solidity smart contracts (Foundry)
 │   ├── src/
 │   │   ├── FrameTxLib.sol            # Library wrapping EIP-8141 opcodes
 │   │   ├── Simple8141Account.sol     # Minimal single-owner smart account
 │   │   ├── SimplePaymaster.sol       # Gas sponsorship paymaster
 │   │   ├── ERC20Paymaster.sol        # ERC20 token paymaster
+│   │   ├── Create2Deployer.sol       # Generic CREATE2 deployer for deploy-in-one-tx
 │   │   └── example/
 │   │       ├── kernel/                       # Kernel v3-style modular account
 │   │       │   ├── Kernel8141.sol
-│   │       │   ├── validators/               # ECDSA, SessionKey validators
-│   │       │   ├── executors/                # Default, Batch executors
-│   │       │   ├── hooks/                    # SpendingLimit, SessionKeyPermission hooks
-│   │       │   └── handlers/                 # ERC-1271 fallback handler
+│   │       │   ├── core/                    # ValidationManager, SelectorManager, HookManager, ExecutorManager
+│   │       │   ├── factory/                 # Kernel8141Factory
+│   │       │   ├── validators/              # ECDSA, SessionKey validators
+│   │       │   ├── executors/               # Default, Batch executors
+│   │       │   ├── hooks/                   # SpendingLimit, SessionKeyPermission hooks
+│   │       │   ├── policies/                # GasPolicy8141, SelectorPolicy8141
+│   │       │   ├── signers/                 # ECDSASigner8141
+│   │       │   ├── handlers/                # ERC-1271 fallback handler
+│   │       │   ├── interfaces/              # Module interfaces (IValidator, IHook, IPolicy, ...)
+│   │       │   └── types/                   # Constants, Structs, Types
 │   │       ├── coinbase-smart-wallet/        # Coinbase-style smart wallet
-│   │       │   └── CoinbaseSmartWallet8141.sol
+│   │       │   ├── CoinbaseSmartWallet8141.sol
+│   │       │   └── CoinbaseSmartWalletFactory8141.sol
 │   │       └── light-account/                # Alchemy LightAccount port
-│   │           └── LightAccount8141.sol
+│   │           ├── LightAccount8141.sol
+│   │           └── LightAccountFactory8141.sol
 │   ├── test/              # Forge unit tests
-│   └── e2e/               # TypeScript E2E tests (viem)
+│   └── e2e/               # TypeScript E2E tests (viem-eip8141)
 ├── devnet/                # Dev network launch script
 ├── build/                 # Build output (geth, solc binaries)
 └── Makefile
@@ -39,26 +49,31 @@ A reference implementation for [EIP-8141](https://github.com/ethereum/EIPs/pull/
 - Go 1.21+
 - CMake 3.13+
 - [Foundry](https://getfoundry.sh)
-- Node.js 18+ (for E2E tests)
+- Node.js 18+
+- [pnpm](https://pnpm.io) (for viem-eip8141)
 
 ## Build
 
-Build the modified geth and solc from submodules:
+Build all components from submodules:
 
 ```bash
 make build
 ```
 
 This will:
-1. Pull git submodules (`8141-geth`, `solidity-eip8141`)
-2. Build geth → `build/bin/geth`
-3. Build solc → `build/bin/solc`
+1. Pull git submodules (`8141-geth`, `solidity-eip8141`, `viem-eip8141`)
+2. Install dependencies (`pnpm install` for viem-eip8141, `npm ci` for contracts)
+3. Build geth → `build/bin/geth`
+4. Build solc → `build/bin/solc`
+5. Build viem-eip8141 → `viem-eip8141/src/_esm`, `_cjs`, `_types`
 
 You can also build individually:
 
 ```bash
 make build-geth
 make build-solc
+make build-viem
+make install-deps
 ```
 
 ## Contracts
@@ -84,16 +99,37 @@ make devnet-stop   # stops the dev node
 E2E tests run against the local devnet. Start the devnet first, then:
 
 ```bash
-make e2e                   # run all E2E tests
-make e2e-simple            # Simple8141Account basic flow
-make e2e-kernel            # Kernel8141 basic flow
-make e2e-kernel-validator  # Kernel8141 validator swap
-make e2e-hooked            # SpendingLimitHook
-make e2e-coinbase-ecdsa    # CoinbaseSmartWallet ECDSA
-make e2e-coinbase-webauthn # CoinbaseSmartWallet WebAuthn
-make e2e-light-account     # LightAccount ECDSA
-make benchmark             # Gas benchmarks
+make e2e                   # run all 13 E2E test suites
+make benchmark             # gas benchmarks
 ```
+
+Individual test targets:
+
+```bash
+# Simple8141Account
+make e2e-simple            # deploy-in-one-tx
+
+# Kernel8141
+make e2e-kernel            # basic flow
+make e2e-kernel-validator  # validator swap
+
+# Kernel hooks/policies
+make e2e-hooked            # SpendingLimitHook
+
+# CoinbaseSmartWallet8141
+make e2e-coinbase-ecdsa    # ECDSA
+make e2e-coinbase-webauthn # WebAuthn
+
+# LightAccount8141
+make e2e-light-account     # ECDSA
+
+# Negative tests (mempool/protocol constraint violations)
+make e2e-negative          # all negative tests
+make e2e-negative-mempool  # mempool tracer violations
+make e2e-negative-protocol # protocol constraint violations
+```
+
+The full `make e2e` suite includes deploy-in-one-tx tests (Simple, Kernel, Coinbase, LightAccount), security tests, permission tests, paymaster tests, and gas benchmarks.
 
 ## Gas Benchmark
 

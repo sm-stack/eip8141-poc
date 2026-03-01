@@ -56,7 +56,7 @@ validate(signature)
 
 ### ERC20Paymaster
 
-`contracts/src/ERC20Paymaster.sol` (~122 lines)
+`contracts/src/ERC20Paymaster.sol` (~132 lines)
 
 ERC-20 token gas sponsor using cross-frame introspection.
 
@@ -99,7 +99,7 @@ The key limitation: EIP-8141 has no `actualGasCost` available to any frame, so e
 
 ### CoinbaseSmartWallet8141
 
-`contracts/src/example/coinbase-smart-wallet/` (~519 lines)
+`contracts/src/example/coinbase-smart-wallet/` (~540 lines)
 
 Port of [Coinbase Smart Wallet](https://github.com/coinbase/smart-wallet). Multi-owner account supporting ECDSA and WebAuthn (passkeys).
 
@@ -129,7 +129,7 @@ Port of [Coinbase Smart Wallet](https://github.com/coinbase/smart-wallet). Multi
 
 ### LightAccount8141
 
-`contracts/src/example/light-account/` (~367 lines)
+`contracts/src/example/light-account/` (~371 lines)
 
 Port of [Alchemy LightAccount](https://github.com/alchemyplatform/light-account). Single-owner account with EOA and contract owner support.
 
