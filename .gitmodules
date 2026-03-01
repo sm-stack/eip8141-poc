@@ -7,3 +7,6 @@
 [submodule "contracts/lib/solady"]
 	path = contracts/lib/solady
 	url = https://github.com/Vectorized/solady
+[submodule "viem-eip8141"]
+	path = viem-eip8141
+	url = https://github.com/sm-stack/viem-eip8141
