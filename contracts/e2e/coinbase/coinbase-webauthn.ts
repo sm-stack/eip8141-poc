@@ -8,13 +8,16 @@ import {
   encodeAbiParameters,
   parseAbiParameters,
   encodeFunctionData,
-  hexToBytes,
   type Hex,
   type Hash,
 } from "viem";
-import { CHAIN_ID, DEAD_ADDR, FRAME_MODE_VERIFY, FRAME_MODE_SENDER } from "../helpers/config.js";
+import {
+  computeSigHash,
+  serializeFrameTransaction,
+  type TransactionSerializableFrame,
+} from "viem/eip8141";
+import { CHAIN_ID, DEAD_ADDR } from "../helpers/config.js";
 import { waitForReceipt } from "../helpers/client.js";
-import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
 import { signWithWebAuthn } from "../helpers/webauthn.js";
 import { verifyReceipt } from "../helpers/receipt.js";
 import { walletAbi } from "../helpers/abis/coinbase.js";
@@ -36,21 +39,20 @@ async function main() {
     const block = await ctx.publicClient.getBlock();
     const gasFeeCap = block.baseFeePerGas! + 2_000_000_000n;
 
-    const frameTxParams: FrameTxParams = {
-      chainId: BigInt(CHAIN_ID),
-      nonce: BigInt(nonce),
+    const tx: TransactionSerializableFrame = {
+      chainId: CHAIN_ID,
+      nonce,
       sender: ctx.walletAddr,
-      gasTipCap: 1_000_000_000n,
-      gasFeeCap,
+      maxPriorityFeePerGas: 1_000_000_000n,
+      maxFeePerGas: gasFeeCap,
       frames: [
-        { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 300_000n, data: new Uint8Array(0) },
-        { mode: FRAME_MODE_SENDER, target: null, gasLimit: 500_000n, data: hexToBytes(senderCalldata) },
+        { mode: "verify", target: null, gasLimit: 300_000n, data: "0x" },
+        { mode: "sender", target: null, gasLimit: 500_000n, data: senderCalldata },
       ],
-      blobFeeCap: 0n,
-      blobHashes: [],
+      type: "frame",
     };
 
-    const sigHash = computeSigHash(frameTxParams);
+    const sigHash = computeSigHash(tx);
     const webAuthnAuth = signWithWebAuthn(sigHash, ctx.p256PrivKey);
 
     const signatureWrapper = encodeAbiParameters(
@@ -62,9 +64,9 @@ async function main() {
       functionName: "validate",
       args: [signatureWrapper, 2],
     });
-    frameTxParams.frames[0].data = hexToBytes(validateCalldata);
+    tx.frames[0].data = validateCalldata;
 
-    const rawTx = encodeFrameTx(frameTxParams);
+    const rawTx = serializeFrameTransaction(tx);
     const txHash = (await ctx.publicClient.request({
       method: "eth_sendRawTransaction" as any,
       params: [rawTx],

@@ -13,21 +13,25 @@ import {
   encodeAbiParameters,
   parseAbiParameters,
   encodeFunctionData,
-  hexToBytes,
-  bytesToHex,
+  parseSignature,
   type Hex,
   type Hash,
   type Address,
 } from "viem";
-import { secp256k1 } from "@noble/curves/secp256k1";
-import { CHAIN_ID, DEV_KEY, SECOND_OWNER_KEY, DEAD_ADDR, FRAME_MODE_VERIFY, FRAME_MODE_SENDER } from "../helpers/config.js";
-import { createTestClients, waitForReceipt, fundAccount } from "../helpers/client.js";
+import { privateKeyToAccount } from "viem/accounts";
+import {
+  computeSigHash,
+  serializeFrameTransaction,
+  type TransactionSerializableFrame,
+} from "viem/eip8141";
+import { CHAIN_ID, DEV_KEY, SECOND_OWNER_KEY, DEAD_ADDR } from "../helpers/config.js";
+import { waitForReceipt } from "../helpers/client.js";
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
-import { computeSigHash, encodeFrameTx, type FrameTxParams } from "../helpers/frame-tx.js";
 import { verifyReceipt } from "../helpers/receipt.js";
 import { walletAbi, factoryAbi } from "../helpers/abis/coinbase.js";
-import { printReceipt, testHeader, testPassed, testFailed, summary, fatal, banner, sectionHeader, detail, success } from "../helpers/log.js";
+import { printReceipt, testHeader, testPassed, testFailed, summary, fatal, detail } from "../helpers/log.js";
 import { deployCoinbaseTestbed } from "./setup.js";
+import { createCoinbaseAccount, sendAndWait } from "../helpers/send-frame-tx.js";
 
 // secp256k1 curve order
 const SECP256K1_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
@@ -37,62 +41,48 @@ async function buildFrameTxParams(
   publicClient: any,
   walletAddr: Address,
   senderCalldata: Hex,
-): Promise<{ params: FrameTxParams; sigHash: Hex }> {
+): Promise<{ tx: TransactionSerializableFrame; sigHash: Hex }> {
   const nonce = await publicClient.getTransactionCount({ address: walletAddr });
   const block = await publicClient.getBlock();
   const gasFeeCap = block.baseFeePerGas! + 2_000_000_000n;
 
-  const params: FrameTxParams = {
-    chainId: BigInt(CHAIN_ID),
-    nonce: BigInt(nonce),
+  const tx: TransactionSerializableFrame = {
+    chainId: CHAIN_ID,
+    nonce,
     sender: walletAddr,
-    gasTipCap: 1_000_000_000n,
-    gasFeeCap,
+    maxPriorityFeePerGas: 1_000_000_000n,
+    maxFeePerGas: gasFeeCap,
     frames: [
-      { mode: FRAME_MODE_VERIFY, target: null, gasLimit: 300_000n, data: new Uint8Array(0) },
-      { mode: FRAME_MODE_SENDER, target: null, gasLimit: 500_000n, data: hexToBytes(senderCalldata) },
+      { mode: "verify", target: null, gasLimit: 300_000n, data: "0x" },
+      { mode: "sender", target: null, gasLimit: 500_000n, data: senderCalldata },
     ],
-    blobFeeCap: 0n,
-    blobHashes: [],
+    type: "frame",
   };
 
-  const sigHash = computeSigHash(params);
-  return { params, sigHash };
-}
-
-/** Sign with secp256k1 and return { r, s, v } as bigint/number. */
-function signRaw(sigHash: Hex, privKey: Hex) {
-  const sig = secp256k1.sign(sigHash.slice(2), privKey.slice(2));
-  return { r: sig.r, s: sig.s, v: sig.recovery };
-}
-
-/** Pack (r, s, v) into 65-byte signature. */
-function packSig(r: bigint, s: bigint, v: number): Uint8Array {
-  const rHex = r.toString(16).padStart(64, "0");
-  const sHex = s.toString(16).padStart(64, "0");
-  return hexToBytes(("0x" + rHex + sHex + v.toString(16).padStart(2, "0")) as Hex);
+  const sigHash = computeSigHash(tx);
+  return { tx, sigHash };
 }
 
 /** Send a frame tx with a pre-built ECDSA sig for Coinbase wallet. Expects failure. */
 async function sendFrameTxExpectFail(
   publicClient: any,
   walletAddr: Address,
-  params: FrameTxParams,
+  tx: TransactionSerializableFrame,
   ownerIndex: number,
-  ecdsaSig: Uint8Array,
+  ecdsaSig: Hex,
 ): Promise<boolean> {
   const signatureWrapper = encodeAbiParameters(
     parseAbiParameters("uint256, bytes"),
-    [BigInt(ownerIndex), bytesToHex(ecdsaSig)]
+    [BigInt(ownerIndex), ecdsaSig]
   );
   const validateCalldata = encodeFunctionData({
     abi: walletAbi,
     functionName: "validate",
     args: [signatureWrapper, 2],
   });
-  params.frames[0].data = hexToBytes(validateCalldata);
+  tx.frames[0].data = validateCalldata;
 
-  const rawTx = encodeFrameTx(params);
+  const rawTx = serializeFrameTransaction(tx);
   try {
     const txHash = (await publicClient.request({
       method: "eth_sendRawTransaction" as any,
@@ -127,19 +117,28 @@ async function main() {
   // ── Test 1: Reject malleable (high-s) ECDSA signature ───────────────
   testHeader(++total, "Reject malleable (high-s) ECDSA signature");
   {
-    const { params, sigHash } = await buildFrameTxParams(ctx.publicClient, ctx.walletAddr, senderCalldata);
-    const { r, s, v } = signRaw(sigHash, DEV_KEY);
+    const { tx, sigHash } = await buildFrameTxParams(ctx.publicClient, ctx.walletAddr, senderCalldata);
 
-    // Create high-s variant
+    // Sign normally (low-s, as viem enforces)
+    const owner = privateKeyToAccount(DEV_KEY);
+    const serializedSig = await owner.sign({ hash: sigHash });
+    const { r, s: sHex, yParity } = parseSignature(serializedSig);
+
+    const s = BigInt(sHex);
+
+    // Create high-s variant: s_high = n - s, v_flipped = 1 - yParity
     const sHigh = SECP256K1_N - s;
-    const vFlipped = 1 - v;
-    const malleableSig = packSig(r, sHigh, vFlipped);
+    const vFlipped = 1 - yParity;
+
+    const rHexStr = r.slice(2);
+    const sHighHex = sHigh.toString(16).padStart(64, "0");
+    const malleableSig = ("0x" + rHexStr + sHighHex + vFlipped.toString(16).padStart(2, "0")) as Hex;
 
     detail(`Original s:  0x${s.toString(16).slice(0, 16)}...`);
     detail(`Malleable s: 0x${sHigh.toString(16).slice(0, 16)}...`);
 
     const rejected = await sendFrameTxExpectFail(
-      ctx.publicClient, ctx.walletAddr, params, 0, malleableSig
+      ctx.publicClient, ctx.walletAddr, tx, 0, malleableSig
     );
     if (rejected) {
       passed++;
@@ -152,12 +151,14 @@ async function main() {
   // ── Test 2: Reject wrong signer ──────────────────────────────────────
   testHeader(++total, "Reject wrong signer");
   {
-    const { params, sigHash } = await buildFrameTxParams(ctx.publicClient, ctx.walletAddr, senderCalldata);
-    const { r, s, v } = signRaw(sigHash, SECOND_OWNER_KEY);
-    const wrongSig = packSig(r, s, v);
+    const { tx, sigHash } = await buildFrameTxParams(ctx.publicClient, ctx.walletAddr, senderCalldata);
+
+    // Sign with a different key (not the registered owner)
+    const wrongOwner = privateKeyToAccount(SECOND_OWNER_KEY);
+    const wrongSig = await wrongOwner.sign({ hash: sigHash });
 
     const rejected = await sendFrameTxExpectFail(
-      ctx.publicClient, ctx.walletAddr, params, 0, wrongSig
+      ctx.publicClient, ctx.walletAddr, tx, 0, wrongSig
     );
     if (rejected) {
       passed++;
@@ -224,27 +225,8 @@ async function main() {
   // ── Test 4: Valid signature still works (sanity check) ──────────────
   testHeader(++total, "Valid signature still accepted (sanity check)");
   {
-    const { params, sigHash } = await buildFrameTxParams(ctx.publicClient, ctx.walletAddr, senderCalldata);
-    const { r, s, v } = signRaw(sigHash, DEV_KEY);
-    const validSig = packSig(r, s, v);
-
-    const signatureWrapper = encodeAbiParameters(
-      parseAbiParameters("uint256, bytes"),
-      [0n, bytesToHex(validSig)]
-    );
-    const validateCalldata = encodeFunctionData({
-      abi: walletAbi,
-      functionName: "validate",
-      args: [signatureWrapper, 2],
-    });
-    params.frames[0].data = hexToBytes(validateCalldata);
-
-    const rawTx = encodeFrameTx(params);
-    const txHash = (await ctx.publicClient.request({
-      method: "eth_sendRawTransaction" as any,
-      params: [rawTx],
-    })) as Hash;
-    const receipt = await waitForReceipt(ctx.publicClient, txHash);
+    const account = createCoinbaseAccount(ctx.walletAddr, 0, DEV_KEY);
+    const receipt = await sendAndWait(ctx.publicClient, account, senderCalldata);
     printReceipt(receipt);
     verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x4|0x2" });
     passed++;

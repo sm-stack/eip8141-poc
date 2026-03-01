@@ -14,11 +14,9 @@ import {
   parseAbiParameters,
   keccak256,
   toBytes,
-  hexToBytes,
-  bytesToHex,
   type Hex,
 } from "viem";
-import { secp256k1 } from "@noble/curves/secp256k1";
+import { privateKeyToAccount } from "viem/accounts";
 import { DEV_KEY } from "../helpers/config.js";
 import { walletAbi } from "../helpers/abis/coinbase.js";
 import { testHeader, testPassed, summary, fatal } from "../helpers/log.js";
@@ -81,11 +79,7 @@ async function main() {
     }) as Hex;
 
     // Sign the replay-safe hash with owner 1's key (index 0)
-    const sig = secp256k1.sign(safeHash.slice(2), DEV_KEY.slice(2));
-    const rHex = sig.r.toString(16).padStart(64, "0");
-    const sHex = sig.s.toString(16).padStart(64, "0");
-    const v = sig.recovery;
-    const ecdsaSig = ("0x" + rHex + sHex + v.toString(16).padStart(2, "0")) as Hex;
+    const ecdsaSig = await privateKeyToAccount(DEV_KEY).sign({ hash: safeHash });
 
     // Encode as SignatureWrapper(ownerIndex=0, signatureData=ecdsaSig)
     const signatureWrapper = encodeAbiParameters(
@@ -114,11 +108,7 @@ async function main() {
 
     // Sign a DIFFERENT hash (not the replay-safe hash)
     const wrongHash = keccak256(toBytes("wrong message"));
-    const sig = secp256k1.sign(wrongHash.slice(2), DEV_KEY.slice(2));
-    const rHex = sig.r.toString(16).padStart(64, "0");
-    const sHex = sig.s.toString(16).padStart(64, "0");
-    const v = sig.recovery;
-    const ecdsaSig = ("0x" + rHex + sHex + v.toString(16).padStart(2, "0")) as Hex;
+    const ecdsaSig = await privateKeyToAccount(DEV_KEY).sign({ hash: wrongHash });
 
     const signatureWrapper = encodeAbiParameters(
       parseAbiParameters("uint256, bytes"),
