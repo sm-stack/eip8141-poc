@@ -18,12 +18,12 @@ import {
   formatEther,
   toFunctionSelector,
   type Hex,
-  type Address,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { toSimple8141Account } from "viem/eip8141";
 import type { FramePaymaster } from "viem/eip8141";
 import { DEV_KEY, DEAD_ADDR } from "../helpers/config.js";
+
 import { createTestClients, waitForReceipt, fundAccount } from "../helpers/client.js";
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
 import { benchmarkTokenAbi } from "../helpers/abis/benchmark-token.js";
