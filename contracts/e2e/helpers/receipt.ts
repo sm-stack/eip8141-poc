@@ -7,6 +7,7 @@ export function verifyReceipt(
     expectVerifyStatus?: string;
     expectSenderStatus?: string;
     expectFrameCount?: number;
+    verifyFrameIndex?: number;
     senderFrameIndex?: number;
   } = {}
 ) {
@@ -14,6 +15,7 @@ export function verifyReceipt(
     expectVerifyStatus = "0x4",
     expectSenderStatus = "0x1",
     expectFrameCount = 2,
+    verifyFrameIndex = 0,
     senderFrameIndex = 1,
   } = options;
 
@@ -37,7 +39,7 @@ export function verifyReceipt(
         `Frame receipts count: got ${receipt.frameReceipts.length}, want ${expectFrameCount}`
       );
     }
-    const verifyStatus = receipt.frameReceipts[0].status;
+    const verifyStatus = receipt.frameReceipts[verifyFrameIndex].status;
     if (expectVerifyStatus.includes("|")) {
       const allowed = expectVerifyStatus.split("|");
       if (!allowed.includes(verifyStatus)) {

@@ -27,10 +27,32 @@ export type { FrameAccount, FramePaymaster };
 
 // ── Shared options ──────────────────────────────────────────────────
 
+export interface DeployFrameParams {
+  /** Target contract for the DEFAULT deploy frame (factory or deployer). */
+  target: Address;
+  /** Calldata for the deploy call. */
+  data: Hex;
+  /** Gas limit for the deploy frame. @default 500_000n */
+  gasLimit?: bigint;
+}
+
 export interface AccountOptions {
   scope?: number;
   verifyGas?: bigint;
   senderGas?: bigint;
+  /** If provided, prepends a DEFAULT deploy frame before VERIFY. */
+  deploy?: DeployFrameParams;
+}
+
+/** Build getDeployFrame from deploy params (if provided). */
+function buildDeployFrame(deploy?: DeployFrameParams) {
+  if (!deploy) return undefined;
+  return async () => ({
+    mode: "default" as const,
+    target: deploy.target,
+    gasLimit: deploy.gasLimit ?? 500_000n,
+    data: deploy.data,
+  });
 }
 
 /** Shared encodeCalls: map each call to a SENDER frame targeting the sender itself. */
@@ -52,7 +74,7 @@ export function createKernelAccount(
   privKey: Hex = DEV_KEY,
   opts: AccountOptions = {},
 ): FrameAccount {
-  const { scope = 2, verifyGas = 300_000n, senderGas = 500_000n } = opts;
+  const { scope = 2, verifyGas = 300_000n, senderGas = 500_000n, deploy } = opts;
   const owner = privateKeyToAccount(privKey);
   return toFrameAccount({
     address,
@@ -66,6 +88,7 @@ export function createKernelAccount(
       return [{ mode: "verify" as const, target: null, gasLimit: verifyGas, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
+    getDeployFrame: buildDeployFrame(deploy),
   });
 }
 
@@ -76,7 +99,7 @@ export function createKernelValidatorAccount(
   privKey: Hex,
   opts: AccountOptions = {},
 ): FrameAccount {
-  const { scope = 2, verifyGas = 300_000n, senderGas = 700_000n } = opts;
+  const { scope = 2, verifyGas = 300_000n, senderGas = 700_000n, deploy } = opts;
   const owner = privateKeyToAccount(privKey);
   return toFrameAccount({
     address,
@@ -92,6 +115,7 @@ export function createKernelValidatorAccount(
       return [{ mode: "verify" as const, target: null, gasLimit: verifyGas, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
+    getDeployFrame: buildDeployFrame(deploy),
   });
 }
 
@@ -102,7 +126,7 @@ export function createKernelPermissionAccount(
   privKey: Hex,
   opts: AccountOptions = {},
 ): FrameAccount {
-  const { scope = 2, verifyGas = 300_000n, senderGas = 500_000n } = opts;
+  const { scope = 2, verifyGas = 300_000n, senderGas = 500_000n, deploy } = opts;
   const owner = privateKeyToAccount(privKey);
   return toFrameAccount({
     address,
@@ -118,6 +142,7 @@ export function createKernelPermissionAccount(
       return [{ mode: "verify" as const, target: null, gasLimit: verifyGas, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
+    getDeployFrame: buildDeployFrame(deploy),
   });
 }
 
@@ -130,7 +155,7 @@ export function createCoinbaseAccount(
   privKey: Hex,
   opts: AccountOptions = {},
 ): FrameAccount {
-  const { scope = 2, verifyGas = 300_000n, senderGas = 500_000n } = opts;
+  const { scope = 2, verifyGas = 300_000n, senderGas = 500_000n, deploy } = opts;
   const owner = privateKeyToAccount(privKey);
   return toFrameAccount({
     address,
@@ -148,6 +173,7 @@ export function createCoinbaseAccount(
       return [{ mode: "verify" as const, target: null, gasLimit: verifyGas, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
+    getDeployFrame: buildDeployFrame(deploy),
   });
 }
 
@@ -159,7 +185,7 @@ export function createLightAccount(
   privKey: Hex = DEV_KEY,
   opts: AccountOptions = {},
 ): FrameAccount {
-  const { scope = 2, verifyGas = 300_000n, senderGas = 500_000n } = opts;
+  const { scope = 2, verifyGas = 300_000n, senderGas = 500_000n, deploy } = opts;
   const owner = privateKeyToAccount(privKey);
   return toFrameAccount({
     address,
@@ -175,6 +201,7 @@ export function createLightAccount(
       return [{ mode: "verify" as const, target: null, gasLimit: verifyGas, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
+    getDeployFrame: buildDeployFrame(deploy),
   });
 }
 

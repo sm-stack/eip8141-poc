@@ -8,14 +8,17 @@ import { execSync } from "child_process";
 import { c } from "./helpers/log.js";
 
 const suites = [
-  { file: "e2e/simple/simple-basic.ts", name: "Simple8141" },
+  { file: "e2e/simple/simple-basic.ts", name: "Simple8141 Deploy" },
   { file: "e2e/simple/simple-paymaster.ts", name: "Simple Paymaster" },
+  { file: "e2e/kernel/kernel-deploy.ts", name: "Kernel Deploy" },
   { file: "e2e/kernel/kernel-basic.ts", name: "Kernel Basic" },
   { file: "e2e/kernel/kernel-validator.ts", name: "Kernel Validator" },
   { file: "e2e/kernel/kernel-security.ts", name: "Kernel Security" },
   { file: "e2e/kernel/kernel-permission.ts", name: "Kernel Permission" },
   { file: "e2e/kernel-hooked/spending-limit.ts", name: "SpendingLimitHook" },
+  { file: "e2e/coinbase/coinbase-deploy.ts", name: "Coinbase Deploy" },
   { file: "e2e/coinbase/coinbase-security.ts", name: "Coinbase Security" },
+  { file: "e2e/light-account/light-account-deploy.ts", name: "LightAccount Deploy" },
   { file: "e2e/light-account/light-account-security.ts", name: "LightAccount Security" },
   { file: "e2e/benchmark/gas-benchmark.ts", name: "Gas Benchmark" },
 ];
