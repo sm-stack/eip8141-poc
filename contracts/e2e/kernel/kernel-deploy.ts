@@ -93,7 +93,7 @@ async function main() {
     deploy: {
       target: factoryAddr,
       data: factoryCalldata,
-      gasLimit: 1_000_000n,
+      gasLimit: 500_000n,
     },
   });
 
