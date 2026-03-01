@@ -17,15 +17,14 @@ import {
   encodeAbiParameters,
   parseAbiParameters,
   encodeFunctionData,
-  hexToBytes,
-  bytesToHex,
   padHex,
   type Hex,
   type Address,
 } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { toSimple8141Account } from "viem/eip8141";
 import {
   DEV_KEY,
-  CHAIN_DEF,
 } from "../helpers/config.js";
 
 // Per-account recipient addresses to avoid SSTORE zero→non-zero bias
@@ -35,15 +34,13 @@ const DEAD_COINBASE = "0x000000000000000000000000000000000000DEA3" as Address;
 const DEAD_LIGHT    = "0x000000000000000000000000000000000000DeA4" as Address;
 import { createTestClients, waitForReceipt, fundAccount } from "../helpers/client.js";
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
-import { signFrameHash } from "../helpers/signing.js";
 import { verifyReceipt } from "../helpers/receipt.js";
 import { kernelAbi, factoryAbi } from "../helpers/abis/kernel.js";
 import { walletAbi, factoryAbi as coinbaseFactoryAbi } from "../helpers/abis/coinbase.js";
 import { walletAbi as lightWalletAbi, factoryAbi as lightFactoryAbi } from "../helpers/abis/light-account.js";
-import { SIMPLE_VALIDATE_SELECTOR, simpleAccountAbi } from "../helpers/abis/simple.js";
 import { benchmarkTokenAbi } from "../helpers/abis/benchmark-token.js";
 import { banner, sectionHeader, info, step, success, fatal } from "../helpers/log.js";
-import { sendFrameTx, kernelValidateVerify, coinbaseVerify, lightAccountVerify, type BuildVerifyData } from "../helpers/send-frame-tx.js";
+import { createKernelAccount, createCoinbaseAccount, createLightAccount, sendAndWait } from "../helpers/send-frame-tx.js";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -82,7 +79,6 @@ function extractGas(receipt: any): { totalGas: bigint; verifyGas: bigint; sender
 /** Send a regular L1 tx (for minting tokens, etc.) */
 async function sendTx(to: Address, data: Hex): Promise<void> {
   const hash = await walletClient.sendTransaction({
-    chain: CHAIN_DEF,
     to,
     data,
     gas: 200_000n,
@@ -91,23 +87,6 @@ async function sendTx(to: Address, data: Hex): Promise<void> {
   });
   const receipt = await waitForReceipt(publicClient, hash);
   if (receipt.status !== "0x1") throw new Error(`Tx failed: ${hash}`);
-}
-
-/** Simple8141Account: validate(uint8 v, bytes32 r, bytes32 s, uint8 scope) — manual ABI */
-function simpleVerify(): BuildVerifyData {
-  return (sigHash: Hex): Hex => {
-    const { r, s, v } = signFrameHash(sigHash, DEV_KEY);
-    const selector = hexToBytes(SIMPLE_VALIDATE_SELECTOR as Hex);
-    const calldata = new Uint8Array(4 + 32 * 4);
-    calldata.set(selector, 0);
-    calldata[35] = v + 27;
-    const rHex = r.toString(16).padStart(64, "0");
-    calldata.set(hexToBytes(("0x" + rHex) as Hex), 36);
-    const sHex = s.toString(16).padStart(64, "0");
-    calldata.set(hexToBytes(("0x" + sHex) as Hex), 68);
-    calldata[131] = 2; // scope=2 (both)
-    return bytesToHex(calldata);
-  };
 }
 
 // ─── Simple8141Account ──────────────────────────────────────
@@ -156,7 +135,6 @@ async function deployKernel(): Promise<{ kernelAddr: Address; validatorAddr: Add
   }) as Address;
 
   const createHash = await walletClient.sendTransaction({
-    chain: CHAIN_DEF,
     to: factoryAddr,
     data: encodeFunctionData({
       abi: factoryAbi,
@@ -195,7 +173,6 @@ async function deployCoinbase(): Promise<Address> {
     encodeAbiParameters(parseAbiParameters("address"), [devAddr]),
   ];
   const createHash = await walletClient.sendTransaction({
-    chain: CHAIN_DEF,
     to: factoryAddr,
     data: encodeFunctionData({
       abi: coinbaseFactoryAbi,
@@ -236,7 +213,6 @@ async function deployLightAccount(): Promise<Address> {
   );
 
   const createHash = await walletClient.sendTransaction({
-    chain: CHAIN_DEF,
     to: factoryAddr,
     data: encodeFunctionData({
       abi: lightFactoryAbi,
@@ -328,27 +304,7 @@ async function main() {
     walletClient, publicClient, tokenBytecode, 3_000_000n, "BenchmarkToken"
   );
 
-  // ── Build common calldata ──
-  const ethTransferCalldata = (target: Address) =>
-    encodeFunctionData({
-      abi: simpleAccountAbi,
-      functionName: "execute",
-      args: [target, 1n, "0x"],
-    });
-
-  const erc20TransferCalldata = (token: Address, recipient: Address) => {
-    const innerData = encodeFunctionData({
-      abi: benchmarkTokenAbi,
-      functionName: "transfer",
-      args: [recipient, 1_000_000_000_000_000_000n],
-    });
-    return encodeFunctionData({
-      abi: simpleAccountAbi,
-      functionName: "execute",
-      args: [token, 0n, innerData],
-    });
-  };
-
+  // ── Build sender calldata (Kernel / Coinbase / LightAccount) ──
   // Kernel uses execute(bytes32 execMode, bytes executionCalldata)
   // ExecMode: single + default = 0x0000...
   // Single exec calldata: abi.encodePacked(target(20B), value(32B), calldata)
@@ -431,24 +387,35 @@ async function main() {
   await sendTx(tokenAddr, mintCalldata);
   success("1,000 BMK minted");
 
-  step("ETH transfer...");
-  const simpleEthReceipt = await sendFrameTx({
-    publicClient, sender: simpleAddr,
-    senderCalldata: ethTransferCalldata(DEAD_SIMPLE),
-    verifyGas: 200_000n, senderGas: 200_000n,
-    buildVerifyData: simpleVerify(),
+  const owner = privateKeyToAccount(DEV_KEY);
+  const simpleAccount = toSimple8141Account({
+    address: simpleAddr,
+    owner,
+    verifyGasLimit: 200_000n,
+    senderGasLimit: 200_000n,
   });
+
+  step("ETH transfer...");
+  const simpleEthHash = await publicClient.sendFrameTransaction({
+    account: simpleAccount,
+    calls: [{ to: DEAD_SIMPLE, value: 1n }],
+  });
+  const simpleEthReceipt = await waitForReceipt(publicClient, simpleEthHash);
   verifyReceipt(simpleEthReceipt, simpleAddr);
   const simpleEth = extractGas(simpleEthReceipt);
   success(`Total: ${fmtGas(simpleEth.totalGas)}`);
 
   step("ERC20 transfer...");
-  const simpleErc20Receipt = await sendFrameTx({
-    publicClient, sender: simpleAddr,
-    senderCalldata: erc20TransferCalldata(tokenAddr, DEAD_SIMPLE),
-    verifyGas: 200_000n, senderGas: 200_000n,
-    buildVerifyData: simpleVerify(),
+  const erc20Data = encodeFunctionData({
+    abi: benchmarkTokenAbi,
+    functionName: "transfer",
+    args: [DEAD_SIMPLE, 1_000_000_000_000_000_000n],
   });
+  const simpleErc20Hash = await publicClient.sendFrameTransaction({
+    account: simpleAccount,
+    calls: [{ to: tokenAddr, data: erc20Data }],
+  });
+  const simpleErc20Receipt = await waitForReceipt(publicClient, simpleErc20Hash);
   verifyReceipt(simpleErc20Receipt, simpleAddr);
   const simpleErc20 = extractGas(simpleErc20Receipt);
   success(`Total: ${fmtGas(simpleErc20.totalGas)}`);
@@ -477,22 +444,16 @@ async function main() {
   await sendTx(tokenAddr, kernelMintCalldata);
   success("1,000 BMK minted");
 
+  const kernelAccount = createKernelAccount(kernelAddr);
+
   step("ETH transfer...");
-  const kernelEthReceipt = await sendFrameTx({
-    publicClient, sender: kernelAddr,
-    senderCalldata: kernelEthCalldata,
-    buildVerifyData: kernelValidateVerify(),
-  });
+  const kernelEthReceipt = await sendAndWait(publicClient, kernelAccount, kernelEthCalldata);
   verifyReceipt(kernelEthReceipt, kernelAddr);
   const kernelEth = extractGas(kernelEthReceipt);
   success(`Total: ${fmtGas(kernelEth.totalGas)}`);
 
   step("ERC20 transfer...");
-  const kernelErc20Receipt = await sendFrameTx({
-    publicClient, sender: kernelAddr,
-    senderCalldata: kernelErc20Calldata(tokenAddr),
-    buildVerifyData: kernelValidateVerify(),
-  });
+  const kernelErc20Receipt = await sendAndWait(publicClient, kernelAccount, kernelErc20Calldata(tokenAddr));
   verifyReceipt(kernelErc20Receipt, kernelAddr);
   const kernelErc20 = extractGas(kernelErc20Receipt);
   success(`Total: ${fmtGas(kernelErc20.totalGas)}`);
@@ -521,22 +482,16 @@ async function main() {
   await sendTx(tokenAddr, coinbaseMintCalldata);
   success("1,000 BMK minted");
 
+  const coinbaseAccount = createCoinbaseAccount(coinbaseAddr, 0, DEV_KEY);
+
   step("ETH transfer...");
-  const coinbaseEthReceipt = await sendFrameTx({
-    publicClient, sender: coinbaseAddr,
-    senderCalldata: coinbaseEthCalldata,
-    buildVerifyData: coinbaseVerify(0, DEV_KEY),
-  });
+  const coinbaseEthReceipt = await sendAndWait(publicClient, coinbaseAccount, coinbaseEthCalldata);
   verifyReceipt(coinbaseEthReceipt, coinbaseAddr);
   const coinbaseEth = extractGas(coinbaseEthReceipt);
   success(`Total: ${fmtGas(coinbaseEth.totalGas)}`);
 
   step("ERC20 transfer...");
-  const coinbaseErc20Receipt = await sendFrameTx({
-    publicClient, sender: coinbaseAddr,
-    senderCalldata: coinbaseErc20Calldata(tokenAddr),
-    buildVerifyData: coinbaseVerify(0, DEV_KEY),
-  });
+  const coinbaseErc20Receipt = await sendAndWait(publicClient, coinbaseAccount, coinbaseErc20Calldata(tokenAddr));
   verifyReceipt(coinbaseErc20Receipt, coinbaseAddr);
   const coinbaseErc20 = extractGas(coinbaseErc20Receipt);
   success(`Total: ${fmtGas(coinbaseErc20.totalGas)}`);
@@ -565,22 +520,16 @@ async function main() {
   await sendTx(tokenAddr, lightMintCalldata);
   success("1,000 BMK minted");
 
+  const lightAccount = createLightAccount(lightAddr);
+
   step("ETH transfer...");
-  const lightEthReceipt = await sendFrameTx({
-    publicClient, sender: lightAddr,
-    senderCalldata: lightEthCalldata,
-    buildVerifyData: lightAccountVerify(),
-  });
+  const lightEthReceipt = await sendAndWait(publicClient, lightAccount, lightEthCalldata);
   verifyReceipt(lightEthReceipt, lightAddr);
   const lightEth = extractGas(lightEthReceipt);
   success(`Total: ${fmtGas(lightEth.totalGas)}`);
 
   step("ERC20 transfer...");
-  const lightErc20Receipt = await sendFrameTx({
-    publicClient, sender: lightAddr,
-    senderCalldata: lightErc20Calldata(tokenAddr),
-    buildVerifyData: lightAccountVerify(),
-  });
+  const lightErc20Receipt = await sendAndWait(publicClient, lightAccount, lightErc20Calldata(tokenAddr));
   verifyReceipt(lightErc20Receipt, lightAddr);
   const lightErc20 = extractGas(lightErc20Receipt);
   success(`Total: ${fmtGas(lightErc20.totalGas)}`);
