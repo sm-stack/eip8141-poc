@@ -22,8 +22,8 @@ export type KernelTestContext = {
   defaultExecutorAddr: Address;
   batchExecutorAddr: Address;
   hookAddr: Address;
-  sessionKeyValidatorAddr: Address;
-  sessionKeyPermissionHookAddr: Address;
+  timestampPolicyAddr: Address;
+  valueLimitPolicyAddr: Address;
 };
 
 /** Deploy all Kernel8141 contracts via factory and fund the kernel with 10 ETH. */
@@ -110,14 +110,12 @@ export async function deployKernelTestbed(): Promise<KernelTestContext> {
     walletClient, publicClient, loadBytecode("SpendingLimitHook"), 3_000_000n, "SpendingLimitHook"
   );
 
-  const { address: sessionKeyValidatorAddr } = await deployContract(
-    walletClient, publicClient, loadBytecode("SessionKeyValidator"), 3_000_000n, "SessionKeyValidator"
+  const { address: timestampPolicyAddr } = await deployContract(
+    walletClient, publicClient, loadBytecode("TimestampPolicy8141"), 3_000_000n, "TimestampPolicy8141"
   );
 
-  const hookCtorArgs = encodeAbiParameters(parseAbiParameters("address"), [sessionKeyValidatorAddr]);
-  const hookDeployData = (loadBytecode("SessionKeyPermissionHook") + hookCtorArgs.slice(2)) as Hex;
-  const { address: sessionKeyPermissionHookAddr } = await deployContract(
-    walletClient, publicClient, hookDeployData, 3_000_000n, "SessionKeyPermissionHook"
+  const { address: valueLimitPolicyAddr } = await deployContract(
+    walletClient, publicClient, loadBytecode("ValueLimitPolicy8141"), 3_000_000n, "ValueLimitPolicy8141"
   );
 
   success("All contracts deployed");
@@ -129,6 +127,6 @@ export async function deployKernelTestbed(): Promise<KernelTestContext> {
     publicClient, walletClient, devAddr,
     kernelAddr, factoryAddr, validatorAddr,
     defaultExecutorAddr, batchExecutorAddr,
-    hookAddr, sessionKeyValidatorAddr, sessionKeyPermissionHookAddr,
+    hookAddr, timestampPolicyAddr, valueLimitPolicyAddr,
   };
 }

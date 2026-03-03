@@ -9,7 +9,10 @@ import {
     ValidationType,
     PermissionId,
     ValidationData,
+    ValidAfter,
+    ValidUntil,
     getValidationResult,
+    parseValidationData,
     PassFlag,
     CallType,
     ExecMode,
@@ -104,6 +107,8 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
     error NoPriorVerifyApproval();
     error EnableInstallFrameNotFound();
     error SignatureTooShort();
+    error NotYetValid();
+    error Expired();
     error InvalidFrameMode();
     error VerifyDidNotApprove();
 
@@ -369,10 +374,14 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
         _enforcePermissionExecution(vId, senderFrameIdx);
 
         ValidationData vd = _validateFrameTx(VALIDATION_MODE_DEFAULT, vId, account, sigHash, senderFrameIdx, actualSig);
-        // Check only the result portion (bottom 160 bits) of ValidationData.
-        // _intersectValidationData always populates validUntil bits (making raw value != 0),
-        // so we must use getValidationResult() which extracts only the success/fail address.
-        if (getValidationResult(vd) != address(0)) revert InvalidSignature();
+        // Parse full ValidationData: result + time bounds from policies/signer.
+        // _intersectValidationData merges time bounds (MAX validAfter, MIN validUntil)
+        // across all policies and the signer.
+        (ValidAfter validAfter, ValidUntil validUntil, address result) =
+            parseValidationData(ValidationData.unwrap(vd));
+        if (result != address(0)) revert InvalidSignature();
+        if (block.timestamp < ValidAfter.unwrap(validAfter)) revert NotYetValid();
+        if (block.timestamp > ValidUntil.unwrap(validUntil)) revert Expired();
 
         FrameTxLib.approveEmpty(scope);
     }
