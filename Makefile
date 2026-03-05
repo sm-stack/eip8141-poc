@@ -4,7 +4,7 @@
        e2e e2e-simple e2e-kernel e2e-kernel-validator e2e-hooked \
        e2e-coinbase-ecdsa e2e-coinbase-webauthn e2e-light-account \
        e2e-negative-mempool e2e-negative-protocol e2e-negative \
-       benchmark
+       e2e-mldsa benchmark
 
 BUILD_DIR := $(CURDIR)/build
 GETH_BIN := $(BUILD_DIR)/bin/geth
@@ -77,6 +77,9 @@ e2e-negative-mempool:
 
 e2e-negative-protocol:
 	cd contracts && npx tsx e2e/negative/protocol-constraints.ts
+
+e2e-mldsa:
+	cd contracts && npx tsx e2e/mldsa/mldsa-basic.ts
 
 e2e-negative: e2e-negative-mempool e2e-negative-protocol
 
