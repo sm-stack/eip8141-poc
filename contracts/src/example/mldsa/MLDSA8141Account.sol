@@ -8,8 +8,9 @@ import {FrameTxLib} from "../../FrameTxLib.sol";
 ///
 /// @dev Uses the VERIFY_MLDSA_ETH precompile at address 0x13 (Keccak PRNG variant).
 ///
-///   The expanded public key (20,512 bytes) is stored in sequential storage slots 0..640.
-///   Layout: A_hat (16,384 B) + tr (32 B) + t1_NTT (4,096 B)
+///   The expanded public key (20,512 bytes) is stored as bytecode in a separate data contract
+///   (SSTORE2 pattern). This avoids 641 SSTOREs at deploy time and uses cheap EXTCODECOPY
+///   instead of 641 SLOADs during verification.
 ///
 ///   Precompile input format (22,964 bytes):
 ///     msg (32 B) + signature (2,420 B) + expanded_pk (20,512 B)
@@ -25,24 +26,27 @@ contract MLDSA8141Account {
     address internal constant MLDSA_ETH = address(0x13);
 
     uint256 internal constant PK_SIZE = 20512;
-    uint256 internal constant PK_SLOTS = 641;
     uint256 internal constant SIG_SIZE = 2420;
     uint256 internal constant PRECOMPILE_INPUT_SIZE = 22964; // 32 + 2420 + 20512
 
+    /// @dev Data contract storing the expanded PK as bytecode (SSTORE2 pattern).
+    ///      Runtime code layout: 0x00 (STOP) + 20,512 bytes PK data.
+    address internal immutable pkContract;
+
     error InvalidCaller();
     error InvalidSignature();
+    error InvalidPKContract();
     error ExecutionFailed();
 
-    /// @notice Deploy with the expanded ML-DSA public key.
-    /// @param expandedPK The 20,512-byte expanded public key (A_hat + tr + t1_NTT).
-    constructor(bytes memory expandedPK) {
-        require(expandedPK.length == PK_SIZE);
+    /// @notice Deploy with a reference to the data contract holding the expanded PK.
+    /// @param _pkContract Address of the SSTORE2 data contract (runtime code = 0x00 + PK).
+    constructor(address _pkContract) {
+        uint256 codeSize;
         assembly {
-            let src := add(expandedPK, 0x20) // skip length prefix
-            for { let i := 0 } lt(i, 641) { i := add(i, 1) } {
-                sstore(i, mload(add(src, mul(i, 32))))
-            }
+            codeSize := extcodesize(_pkContract)
         }
+        if (codeSize != PK_SIZE + 1) revert InvalidPKContract();
+        pkContract = _pkContract;
     }
 
     /// @notice Validation entry point, called in a VERIFY frame.
@@ -53,6 +57,7 @@ contract MLDSA8141Account {
         if (signature.length != SIG_SIZE) revert InvalidSignature();
 
         bytes32 sigHash = FrameTxLib.sigHash();
+        address pkAddr = pkContract;
 
         assembly {
             // Allocate precompile input buffer (22,964 bytes)
@@ -64,10 +69,8 @@ contract MLDSA8141Account {
             // 2. Copy signature from calldata (2,420 bytes)
             calldatacopy(add(ptr, 32), signature.offset, 2420)
 
-            // 3. Load expanded PK from storage (641 slots × 32 bytes)
-            for { let i := 0 } lt(i, 641) { i := add(i, 1) } {
-                mstore(add(add(ptr, 2452), mul(i, 32)), sload(i))
-            }
+            // 3. Load expanded PK from data contract (skip 1-byte STOP prefix)
+            extcodecopy(pkAddr, add(ptr, 2452), 1, 20512)
 
             // 4. staticcall to VERIFY_MLDSA_ETH precompile (0x13)
             let ok := staticcall(gas(), 0x13, ptr, 22964, ptr, 32)

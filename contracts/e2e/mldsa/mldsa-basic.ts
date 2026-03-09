@@ -3,8 +3,9 @@
  *
  * Demonstrates EIP-8141 + EIP-8051 integration:
  *   1. Generate ML-DSA-ETH key pair (Keccak PRNG variant)
- *   2. Deploy MLDSA8141Account with expanded public key (20,512 bytes)
- *   3. Send frame transaction verified by VERIFY_MLDSA_ETH precompile (0x13)
+ *   2. Deploy PK data contract via SSTORE2 pattern (code storage, no SSTOREs)
+ *   3. Deploy MLDSA8141Account referencing the PK data contract
+ *   4. Send frame transaction verified by VERIFY_MLDSA_ETH precompile (0x13)
  *
  * Frame layout:
  *   Frame 0: VERIFY(account) → validate(mldsaSig, scope=2) → APPROVE(both)
@@ -73,6 +74,34 @@ const mldsaAccountAbi = [
   },
 ] as const;
 
+// ── SSTORE2: deploy data as contract bytecode ────────────────────────
+
+/**
+ * Build creation bytecode that deploys `0x00 || data` as runtime code.
+ *
+ * Creation code (11 bytes):
+ *   PUSH2 runtimeLen | DUP1 | PUSH1 0x0b | RETURNDATASIZE | CODECOPY | RETURNDATASIZE | RETURN
+ * Runtime code:
+ *   0x00 (STOP) | data
+ */
+function sstore2CreationCode(data: Uint8Array): Hex {
+  const runtimeLen = data.length + 1; // +1 for STOP prefix
+  const header = new Uint8Array([
+    0x61, (runtimeLen >> 8) & 0xff, runtimeLen & 0xff, // PUSH2 runtimeLen
+    0x80,       // DUP1
+    0x60, 0x0a, // PUSH1 10 (creation code size)
+    0x3d,       // RETURNDATASIZE (push 0 as destOffset)
+    0x39,       // CODECOPY
+    0x3d,       // RETURNDATASIZE (push 0 as offset)
+    0xf3,       // RETURN
+    0x00,       // STOP (runtime code prefix)
+  ]);
+  const bytecode = new Uint8Array(header.length + data.length);
+  bytecode.set(header);
+  bytecode.set(data, header.length);
+  return toHex(bytecode);
+}
+
 // ── MLDSA Account Factory ────────────────────────────────────────────
 
 function createMLDSAAccount(params: {
@@ -81,7 +110,7 @@ function createMLDSAAccount(params: {
   verifyGas?: bigint;
   senderGas?: bigint;
 }): FrameAccount {
-  const { address, secretKey, verifyGas = 2_500_000n, senderGas = 100_000n } = params;
+  const { address, secretKey, verifyGas = 500_000n, senderGas = 100_000n } = params;
 
   return toFrameAccount({
     address,
@@ -135,35 +164,46 @@ async function main() {
   info(`Expanded PK: ${MLDSA_PK_SIZE} bytes`);
   info(`PK prefix: ${toHex(expandedPK).slice(0, 18)}...`);
 
-  // ── 2. Deploy MLDSA8141Account via regular transaction ──
-  // Constructor takes the 20,512-byte expanded PK.
-  // Cost: ~12.8M gas (641 SSTOREs) — too much for a DEFAULT frame.
+  // ── 2. Deploy PK data contract (SSTORE2 pattern) ──
+  // Stores the 20,512-byte expanded PK as contract bytecode.
+  // Much cheaper than 641 SSTOREs and fits within block gas limit.
+  sectionHeader("Deploy PK Data Contract (SSTORE2)");
+  const pkCreationCode = sstore2CreationCode(expandedPK);
+  const { address: pkContractAddr } = await deployContract(
+    walletClient,
+    publicClient,
+    pkCreationCode,
+    5_000_000n,
+    "PK Data Contract",
+  );
+
+  // ── 3. Deploy MLDSA8141Account ──
   sectionHeader("Deploy MLDSA8141Account");
   const bytecode = loadBytecode("MLDSA8141Account");
   const constructorArg = encodeAbiParameters(
-    parseAbiParameters("bytes"),
-    [toHex(expandedPK)],
+    parseAbiParameters("address"),
+    [pkContractAddr],
   );
   const initCode = (bytecode + constructorArg.slice(2)) as Hex;
   const { address: accountAddr } = await deployContract(
     walletClient,
     publicClient,
     initCode,
-    15_000_000n, // ~12.8M for SSTOREs + contract creation
+    500_000n,
     "MLDSA8141Account",
   );
 
-  // ── 3. Fund the account ──
+  // ── 4. Fund the account ──
   sectionHeader("Fund Account");
   await fundAccount(walletClient, publicClient, accountAddr);
 
-  // ── 4. Send frame transaction: VERIFY + SENDER ──
+  // ── 5. Send frame transaction: VERIFY + SENDER ──
   testHeader(1, "ML-DSA-ETH Verify + Execute (ETH transfer)");
 
   const account = createMLDSAAccount({
     address: accountAddr,
     secretKey,
-    verifyGas: 2_500_000n,
+    verifyGas: 500_000n,
     senderGas: 50_000n,
   });
 
@@ -188,13 +228,13 @@ async function main() {
   // Check gas used by VERIFY frame
   if (receipt.frameReceipts) {
     const verifyGasUsed = BigInt(receipt.frameReceipts[0].gasUsed);
-    info(`VERIFY frame gas: ${verifyGasUsed.toLocaleString()} (641 SLOADs + precompile)`);
+    info(`VERIFY frame gas: ${verifyGasUsed.toLocaleString()} (EXTCODECOPY + precompile)`);
   }
 
   success(`Post-quantum ML-DSA-ETH transaction verified at ${accountAddr}`);
   testPassed("ML-DSA-ETH Verify + Execute");
 
-  // ── 5. Second transaction to prove key reuse works ──
+  // ── 6. Second transaction to prove key reuse works ──
   testHeader(2, "Second ML-DSA-ETH transaction (key reuse)");
 
   step("Sending another frame tx with same key pair...");
