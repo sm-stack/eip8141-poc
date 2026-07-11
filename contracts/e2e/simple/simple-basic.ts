@@ -82,8 +82,10 @@ async function main() {
     ...baseAccount,
     getDeployFrame: async () => ({
       mode: "default" as const,
+      flags: 0,
       target: deployerAddr,
       gasLimit: 500_000n,
+      value: 0n,
       data: deployCalldata,
     }),
   };

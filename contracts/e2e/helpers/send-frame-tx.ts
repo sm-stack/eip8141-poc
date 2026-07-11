@@ -49,8 +49,10 @@ function buildDeployFrame(deploy?: DeployFrameParams) {
   if (!deploy) return undefined;
   return async () => ({
     mode: "default" as const,
+    flags: 0,
     target: deploy.target,
     gasLimit: deploy.gasLimit ?? 500_000n,
+    value: 0n,
     data: deploy.data,
   });
 }
@@ -60,8 +62,10 @@ function defaultEncodeCalls(senderGas: bigint) {
   return (calls: { data?: Hex }[]) =>
     calls.map((c) => ({
       mode: "sender" as const,
+      flags: 0,
       target: null,
       gasLimit: senderGas,
+      value: 0n,
       data: c.data ?? ("0x" as Hex),
     }));
 }
@@ -74,7 +78,7 @@ export function createKernelAccount(
   privKey: Hex = DEV_KEY,
   opts: AccountOptions = {},
 ): FrameAccount {
-  const { scope = 2, verifyGas = 300_000n, senderGas = 500_000n, deploy } = opts;
+  const { scope = 3, verifyGas = 300_000n, senderGas = 500_000n, deploy } = opts;
   const owner = privateKeyToAccount(privKey);
   return toFrameAccount({
     address,
@@ -85,7 +89,7 @@ export function createKernelAccount(
         functionName: "validate",
         args: [sig, scope],
       });
-      return [{ mode: "verify" as const, target: null, gasLimit: verifyGas, data }];
+      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, value: 0n, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
     getDeployFrame: buildDeployFrame(deploy),
@@ -99,7 +103,7 @@ export function createKernelValidatorAccount(
   privKey: Hex,
   opts: AccountOptions = {},
 ): FrameAccount {
-  const { scope = 2, verifyGas = 300_000n, senderGas = 700_000n, deploy } = opts;
+  const { scope = 3, verifyGas = 300_000n, senderGas = 700_000n, deploy } = opts;
   const owner = privateKeyToAccount(privKey);
   return toFrameAccount({
     address,
@@ -112,7 +116,7 @@ export function createKernelValidatorAccount(
         functionName: "validateFromSenderFrame",
         args: [prefixedSig, scope],
       });
-      return [{ mode: "verify" as const, target: null, gasLimit: verifyGas, data }];
+      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, value: 0n, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
     getDeployFrame: buildDeployFrame(deploy),
@@ -126,7 +130,7 @@ export function createKernelPermissionAccount(
   privKey: Hex,
   opts: AccountOptions = {},
 ): FrameAccount {
-  const { scope = 2, verifyGas = 300_000n, senderGas = 500_000n, deploy } = opts;
+  const { scope = 3, verifyGas = 300_000n, senderGas = 500_000n, deploy } = opts;
   const owner = privateKeyToAccount(privKey);
   return toFrameAccount({
     address,
@@ -139,7 +143,7 @@ export function createKernelPermissionAccount(
         functionName: "validatePermission",
         args: [fullSig, scope],
       });
-      return [{ mode: "verify" as const, target: null, gasLimit: verifyGas, data }];
+      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, value: 0n, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
     getDeployFrame: buildDeployFrame(deploy),
@@ -155,7 +159,7 @@ export function createCoinbaseAccount(
   privKey: Hex,
   opts: AccountOptions = {},
 ): FrameAccount {
-  const { scope = 2, verifyGas = 300_000n, senderGas = 500_000n, deploy } = opts;
+  const { scope = 3, verifyGas = 300_000n, senderGas = 500_000n, deploy } = opts;
   const owner = privateKeyToAccount(privKey);
   return toFrameAccount({
     address,
@@ -170,7 +174,7 @@ export function createCoinbaseAccount(
         functionName: "validate",
         args: [signatureWrapper, scope],
       });
-      return [{ mode: "verify" as const, target: null, gasLimit: verifyGas, data }];
+      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, value: 0n, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
     getDeployFrame: buildDeployFrame(deploy),
@@ -185,7 +189,7 @@ export function createLightAccount(
   privKey: Hex = DEV_KEY,
   opts: AccountOptions = {},
 ): FrameAccount {
-  const { scope = 2, verifyGas = 300_000n, senderGas = 500_000n, deploy } = opts;
+  const { scope = 3, verifyGas = 300_000n, senderGas = 500_000n, deploy } = opts;
   const owner = privateKeyToAccount(privKey);
   return toFrameAccount({
     address,
@@ -198,7 +202,7 @@ export function createLightAccount(
         functionName: "validate",
         args: [typedSig, scope],
       });
-      return [{ mode: "verify" as const, target: null, gasLimit: verifyGas, data }];
+      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, value: 0n, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
     getDeployFrame: buildDeployFrame(deploy),

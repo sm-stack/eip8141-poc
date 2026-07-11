@@ -79,7 +79,7 @@ async function main() {
     publicKey,
     verifyGasLimit: 100_000n,
     senderGasLimit: 100_000n,
-    scope: 2,
+    scope: 3,
   });
 
   // Verify derived address matches

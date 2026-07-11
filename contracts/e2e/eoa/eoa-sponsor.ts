@@ -59,7 +59,7 @@ async function main() {
   // ── Test: Sponsored EOA transaction ──
   testHeader(1, "EOA tx with gas sponsoring (no tokens)");
 
-  // LocalAccount passed directly — scope=0 means sponsor pays gas
+  // LocalAccount passed directly; execution-only scope is selected with a paymaster.
   const account = user;
 
   // Sponsor paymaster — signs the sigHash to authorize gas payment
@@ -83,8 +83,10 @@ async function main() {
       });
       return {
         mode: "verify" as const,
+        flags: 2,
         target: sponsorAddr,
         gasLimit: 200_000n,
+        value: 0n,
         data,
       };
     },
@@ -95,7 +97,7 @@ async function main() {
     account,
     paymaster,
     calls: [{ to: DEAD_ADDR }],
-    // scope defaults to 0 (execution-only) when paymaster is present
+    // scope defaults to 1 (execution-only) when paymaster is present
   });
 
   const receipt = await waitForReceipt(publicClient, txHash);

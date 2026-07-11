@@ -45,6 +45,7 @@ async function main() {
       sender: ctx.walletAddr,
       maxPriorityFeePerGas: 1_000_000_000n,
       maxFeePerGas: gasFeeCap,
+      signatures: [],
       frames: [
         { mode: "verify", target: null, gasLimit: 300_000n, data: "0x" },
         { mode: "sender", target: null, gasLimit: 500_000n, data: senderCalldata },

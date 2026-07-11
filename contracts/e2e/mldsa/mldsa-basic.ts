@@ -124,12 +124,13 @@ function createMLDSAAccount(params: {
       const data = encodeFunctionData({
         abi: mldsaAccountAbi,
         functionName: "validate",
-        args: [sigHex, 2], // scope=BOTH
+        args: [sigHex, 3], // scope=execution + payment
       });
 
       return [
         {
           mode: "verify" as const,
+          flags: 3,
           target: null,
           gasLimit: verifyGas,
           data,
@@ -139,8 +140,10 @@ function createMLDSAAccount(params: {
     encodeCalls: (calls) =>
       calls.map((c) => ({
         mode: "sender" as const,
+        flags: 0,
         target: c.to,
         gasLimit: senderGas,
+        value: 0n,
         data: c.data ?? ("0x" as Hex),
       })),
   });

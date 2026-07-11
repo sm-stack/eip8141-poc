@@ -12,17 +12,17 @@
 
 import {
   encodeAbiParameters,
+  encodeFunctionData,
   parseAbiParameters,
-  hexToBytes,
-  bytesToHex,
-  parseSignature,
   type Hex,
   type Address,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   computeSigHash,
+  makeEoaSignaturePlaceholder,
   serializeFrameTransaction,
+  signEoaTransaction,
   type TransactionSerializableFrame,
 } from "viem/eip8141";
 import {
@@ -33,7 +33,7 @@ import {
 import { createTestClients, fundAccount } from "../helpers/client.js";
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
 import { expectRpcRejection } from "../helpers/expect.js";
-import { SIMPLE_VALIDATE_SELECTOR } from "../helpers/abis/simple.js";
+import { simpleAccountAbi } from "../helpers/abis/simple.js";
 import {
   banner,
   sectionHeader,
@@ -47,18 +47,11 @@ import {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function encodeValidate(v: number, r: bigint, s: bigint, scope: number): Hex {
-  const selectorBytes = hexToBytes(SIMPLE_VALIDATE_SELECTOR as Hex);
-  const calldata = new Uint8Array(4 + 32 * 4);
-  calldata.set(selectorBytes, 0);
-  calldata[35] = v + 27;
-  const rHex = r.toString(16).padStart(64, "0");
-  calldata.set(hexToBytes(("0x" + rHex) as Hex), 36);
-  const sHex = s.toString(16).padStart(64, "0");
-  calldata.set(hexToBytes(("0x" + sHex) as Hex), 68);
-  calldata[131] = scope;
-  return bytesToHex(calldata);
-}
+const validateCalldata = encodeFunctionData({
+  abi: simpleAccountAbi,
+  functionName: "validate",
+  args: [0n],
+});
 
 /**
  * Sign frame tx, set VERIFY calldata, encode, and send expecting RPC rejection.
@@ -69,17 +62,15 @@ async function sendExpectingRejection(
   verifyFrameIndices: { index: number; scope: number }[],
   expectedError?: string
 ): Promise<string> {
-  const sigHash = computeSigHash(params);
   const account = privateKeyToAccount(DEV_KEY);
-  const sig = await account.sign({ hash: sigHash });
-  const { r: rHex, s: sHex, yParity } = parseSignature(sig);
-  const v = yParity;
-  const r = BigInt(rHex);
-  const s = BigInt(sHex);
 
   for (const { index, scope } of verifyFrameIndices) {
-    params.frames[index].data = encodeValidate(v, r, s, scope);
+    params.frames[index].flags = scope;
+    params.frames[index].data = validateCalldata;
   }
+  params.signatures = [makeEoaSignaturePlaceholder(account.address)];
+  const sigHash = computeSigHash(params);
+  params.signatures = [await signEoaTransaction(account, sigHash)];
 
   const rawTx = serializeFrameTransaction(params);
   return expectRpcRejection(async () => {
@@ -132,6 +123,7 @@ async function main() {
       sender: accountAddr,
       maxPriorityFeePerGas: 1_000_000_000n,
       maxFeePerGas: ctx.gasFeeCap,
+      signatures: [],
       frames: [
         { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, data: '0x' },
         { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
@@ -141,7 +133,7 @@ async function main() {
 
     const msg = await sendExpectingRejection(
       publicClient, params,
-      [{ index: 1, scope: 2 }],
+      [{ index: 1, scope: 3 }],
       "sender frame before"
     );
     step(`Rejected: ${msg.slice(0, 120)}`);
@@ -163,6 +155,7 @@ async function main() {
       sender: accountAddr,
       maxPriorityFeePerGas: 1_000_000_000n,
       maxFeePerGas: ctx.gasFeeCap,
+      signatures: [],
       frames: [
         { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
         { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, data: '0x' },
@@ -172,7 +165,7 @@ async function main() {
 
     const msg = await sendExpectingRejection(
       publicClient, params,
-      [{ index: 0, scope: 1 }],
+      [{ index: 0, scope: 2 }],
       "payment approval without prior execution"
     );
     step(`Rejected: ${msg.slice(0, 120)}`);
@@ -194,6 +187,7 @@ async function main() {
       sender: accountAddr,
       maxPriorityFeePerGas: 1_000_000_000n,
       maxFeePerGas: ctx.gasFeeCap,
+      signatures: [],
       frames: [
         { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
         { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, data: '0x' },
@@ -203,7 +197,7 @@ async function main() {
 
     const msg = await sendExpectingRejection(
       publicClient, params,
-      [{ index: 0, scope: 0 }],
+      [{ index: 0, scope: 1 }],
       "no payer approved"
     );
     step(`Rejected: ${msg.slice(0, 120)}`);
@@ -225,6 +219,7 @@ async function main() {
       sender: accountAddr,
       maxPriorityFeePerGas: 1_000_000_000n,
       maxFeePerGas: ctx.gasFeeCap,
+      signatures: [],
       frames: [
         { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
         { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
@@ -235,7 +230,7 @@ async function main() {
 
     const msg = await sendExpectingRejection(
       publicClient, params,
-      [{ index: 0, scope: 0 }, { index: 1, scope: 0 }],
+      [{ index: 0, scope: 1 }, { index: 1, scope: 1 }],
       "re-approval"
     );
     step(`Rejected: ${msg.slice(0, 120)}`);
@@ -282,6 +277,7 @@ async function main() {
       sender: innerAddr,
       maxPriorityFeePerGas: 1_000_000_000n,
       maxFeePerGas: innerGasFeeCap,
+      signatures: [],
       frames: [
         { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
         { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, data: '0x' },
@@ -291,7 +287,7 @@ async function main() {
 
     const msg = await sendExpectingRejection(
       publicClient, params,
-      [{ index: 0, scope: 2 }]
+      [{ index: 0, scope: 3 }]
     );
     step(`Rejected: ${msg.slice(0, 120)}`);
     testPassed("Inner call APPROVE rejected");
