@@ -81,6 +81,6 @@ contract CanonicalPaymasterTest is TestBase {
 
     function test_validateRejectsNonEntryPoint() public {
         vm.expectRevert(CanonicalPaymaster.InvalidCaller.selector);
-        paymaster.validate(new bytes(65));
+        paymaster.validate(0);
     }
 }

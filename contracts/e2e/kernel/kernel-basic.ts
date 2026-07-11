@@ -50,7 +50,7 @@ async function main() {
     });
     const receipt = await send(ctx, installCalldata);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x1" });
     testPassed("DefaultExecutor installed");
   }
 
@@ -66,7 +66,7 @@ async function main() {
     });
     const receipt = await send(ctx, calldata);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x1" });
     testPassed();
   }
 
@@ -85,7 +85,7 @@ async function main() {
     });
     const receipt = await send(ctx, calldata);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x1" });
     testPassed();
   }
 
@@ -105,7 +105,7 @@ async function main() {
     });
     const receipt = await send(ctx, calldata);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x1" });
     testPassed("executeTry handled failure gracefully");
   }
 
@@ -124,7 +124,7 @@ async function main() {
     });
     const receipt = await send(ctx, calldata);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x1" });
     testPassed("executeBatchTry handled mixed results");
   }
 

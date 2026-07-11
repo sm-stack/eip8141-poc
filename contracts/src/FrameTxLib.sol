@@ -74,7 +74,7 @@ library FrameTxLib {
     /// @notice Read a frame parameter.
     function frameParam(uint256 param, uint256 frameIndex) internal pure returns (bytes32 result) {
         assembly {
-            result := frameparam(frameIndex, param)
+            result := frameparam(param, frameIndex)
         }
     }
 
@@ -95,7 +95,7 @@ library FrameTxLib {
     /// @notice Read transaction-level signature metadata.
     function sigParam(uint256 param, uint256 signatureIndex) internal pure returns (bytes32 result) {
         assembly {
-            result := sigparam(signatureIndex, param)
+            result := sigparam(param, signatureIndex)
         }
     }
 

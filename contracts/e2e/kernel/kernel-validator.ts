@@ -75,7 +75,7 @@ async function main() {
       args: [1n, secondValidatorAddr, installInitData],
     });
     const installReceipt = await sendRoot(ctx, installCalldata);
-    verifyReceipt(installReceipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(installReceipt, ctx.kernelAddr, { expectVerifyStatus: "0x1" });
 
     // Send frame tx with non-root validator
     step("Sending frame tx with non-root validator...");
@@ -95,7 +95,7 @@ async function main() {
       ctx, SECOND_OWNER_KEY as Hex, secondValidatorAddr, senderCalldata
     );
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x1" });
     testPassed("Non-root validator bound to sigHash via SENDER frame");
   }
 

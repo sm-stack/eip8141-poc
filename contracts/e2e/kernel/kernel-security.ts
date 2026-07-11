@@ -91,7 +91,7 @@ async function main() {
     const account = createKernelAccount(ctx.kernelAddr);
     const receipt = await sendAndWait(ctx.publicClient, account, senderCalldata);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x1" });
     passed++;
     testPassed("Valid signature accepted");
   }

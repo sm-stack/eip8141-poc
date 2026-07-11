@@ -77,7 +77,7 @@ async function main() {
     signatureType: "p256",
     sign: (hash: Hex) => p256Sign(hash, privKey),
     publicKey,
-    verifyGasLimit: 100_000n,
+    verifyGasLimit: 90_000n,
     senderGasLimit: 100_000n,
     scope: 3,
   });
@@ -115,12 +115,12 @@ async function main() {
   }
   success("2 frame receipts present");
 
-  // Frame 0: VERIFY → APPROVED_BOTH (0x4)
+  // Frame 0: VERIFY succeeds after approving both scopes.
   const frame0Status = receipt.frameReceipts[0].status;
-  if (frame0Status !== "0x4") {
-    throw new Error(`Frame 0 (VERIFY): got ${frame0Status}, want 0x4`);
+  if (frame0Status !== "0x1") {
+    throw new Error(`Frame 0 (VERIFY): got ${frame0Status}, want 0x1`);
   }
-  success("Frame 0: APPROVED_BOTH (0x4)");
+  success("Frame 0: VERIFY SUCCESS (0x1)");
 
   // Frame 1: SENDER → SUCCESS (0x1)
   const frame1Status = receipt.frameReceipts[1].status;

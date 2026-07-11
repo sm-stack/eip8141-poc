@@ -9,9 +9,6 @@ import {FrameTxLib} from "./FrameTxLib.sol";
 ///      the pending withdrawal amount is slot 1. Do not reorder these fields.
 contract CanonicalPaymaster {
     address internal constant ENTRY_POINT = 0x00000000000000000000000000000000000000AA;
-    uint256 internal constant SECP256K1_HALF_N =
-        0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0;
-
     uint64 public constant WITHDRAWAL_DELAY = 7 days;
 
     address public signer;
@@ -35,19 +32,15 @@ contract CanonicalPaymaster {
         signer = _signer;
     }
 
-    /// @notice Validate a 65-byte r||s||v signature over the canonical tx sig hash.
-    function validate(bytes calldata signature) external view {
+    /// @notice Approve a protocol-verified canonical transaction signature.
+    function validate(uint256 signatureIndex) external view {
         if (msg.sender != ENTRY_POINT) revert InvalidCaller();
-        if (signature.length != 65) revert InvalidSignature();
-
-        bytes32 r = bytes32(signature[0:32]);
-        bytes32 s = bytes32(signature[32:64]);
-        uint8 v = uint8(signature[64]);
-        if (v < 27) v += 27;
-        if (v > 28 || uint256(s) > SECP256K1_HALF_N) revert InvalidSignature();
-
-        address recovered = ecrecover(FrameTxLib.sigHash(), v, r, s);
-        if (recovered == address(0) || recovered != signer) revert InvalidSignature();
+        if (signatureIndex >= FrameTxLib.signatureCount()) revert InvalidSignature();
+        if (FrameTxLib.signatureScheme(signatureIndex) != FrameTxLib.SIGNATURE_SCHEME_SECP256K1) {
+            revert InvalidSignature();
+        }
+        if (FrameTxLib.signatureSigner(signatureIndex) != signer) revert InvalidSignature();
+        if (FrameTxLib.signatureMessage(signatureIndex) != bytes32(0)) revert InvalidSignature();
         FrameTxLib.approveEmpty(FrameTxLib.SCOPE_PAYMENT);
     }
 

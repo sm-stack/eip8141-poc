@@ -97,7 +97,7 @@ make devnet        # starts geth --dev on port 18545
 make devnet-stop   # stops the dev node
 ```
 
-The developer genesis installs the expiry verifier at `0x0000000000000000000000000000000000008141`. Canonical paymaster instances are deployed as needed; their pinned runtime code hash is `0x471975c53fcc25c8c4eb88aa1d0611c4ec51932e490ca12e706565f634990dd9`.
+The developer genesis installs the expiry verifier at `0x0000000000000000000000000000000000008141`. Canonical paymaster instances are deployed as needed; their pinned runtime code hash is `0x753d8fb13a049dbfd7771540fce6add0de9fd73fa5ec5a74186942d01b65275e`.
 
 ## E2E Tests
 

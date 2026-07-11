@@ -215,19 +215,19 @@ async function main() {
   }
   success("5 frame receipts present");
 
-  // Frame 0: VERIFY(sender) → APPROVED_EXECUTION (0x2)
+  // VERIFY receipt statuses are normalized to success (0x1).
   const frame0Status = receipt.frameReceipts[0].status;
-  if (frame0Status !== "0x2") {
-    throw new Error(`Frame 0 (VERIFY/sender): got ${frame0Status}, want 0x2`);
+  if (frame0Status !== "0x1") {
+    throw new Error(`Frame 0 (VERIFY/sender): got ${frame0Status}, want 0x1`);
   }
-  success("Frame 0: APPROVED_EXECUTION (0x2)");
+  success("Frame 0: VERIFY/sender SUCCESS (0x1)");
 
-  // Frame 1: VERIFY(paymaster) → APPROVED_PAYMENT (0x3)
+  // Frame 1: paymaster VERIFY succeeds.
   const frame1Status = receipt.frameReceipts[1].status;
-  if (frame1Status !== "0x3") {
-    throw new Error(`Frame 1 (VERIFY/paymaster): got ${frame1Status}, want 0x3`);
+  if (frame1Status !== "0x1") {
+    throw new Error(`Frame 1 (VERIFY/paymaster): got ${frame1Status}, want 0x1`);
   }
-  success("Frame 1: APPROVED_PAYMENT (0x3)");
+  success("Frame 1: VERIFY/paymaster SUCCESS (0x1)");
 
   // Frame 2: SENDER(ERC20 transfer) → SUCCESS (0x1)
   const frame2Status = receipt.frameReceipts[2].status;

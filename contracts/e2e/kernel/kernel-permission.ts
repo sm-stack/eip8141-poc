@@ -160,7 +160,7 @@ async function main() {
     ],
   });
   const installReceipt = await sendRoot(ctx, installCalldata, 1_000_000n);
-  verifyReceipt(installReceipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
+  verifyReceipt(installReceipt, ctx.kernelAddr, { expectVerifyStatus: "0x1" });
   success("Permission installed");
 
   // ── Test 1: Permission-based execution via executeHooked ────────────
@@ -176,7 +176,7 @@ async function main() {
 
     const receipt = await sendPermission(ctx, SECOND_OWNER_KEY as Hex, senderCalldata);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.kernelAddr, { expectVerifyStatus: "0x1" });
     passed++;
     testPassed("Permission-based execution via executeHooked succeeded");
   }

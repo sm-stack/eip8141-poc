@@ -75,7 +75,7 @@ async function main() {
 
     const receipt = await waitForReceipt(ctx.publicClient, txHash);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x1" });
     testPassed("P256 WebAuthn Owner executed successfully");
   }
 

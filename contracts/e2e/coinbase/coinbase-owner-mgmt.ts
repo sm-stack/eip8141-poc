@@ -68,7 +68,7 @@ async function main() {
 
     const receipt = await send(senderCalldata);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x1" });
 
     // Verify new owner was added
     const isOwner = await ctx.publicClient.readContract({
@@ -110,7 +110,7 @@ async function main() {
 
     const receipt = await send(senderCalldata);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x1" });
 
     // Verify owner was removed
     const isOwner = await ctx.publicClient.readContract({

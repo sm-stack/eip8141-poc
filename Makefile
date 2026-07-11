@@ -5,7 +5,7 @@
        e2e-coinbase-ecdsa e2e-coinbase-webauthn e2e-light-account \
        e2e-negative-mempool e2e-negative-protocol e2e-negative \
        e2e-mldsa e2e-eoa e2e-eoa-batching e2e-eoa-sponsor e2e-eoa-p256 \
-       benchmark
+       e2e-phase1 benchmark
 
 BUILD_DIR := $(CURDIR)/build
 GETH_BIN := $(BUILD_DIR)/bin/geth
@@ -92,6 +92,9 @@ e2e-eoa-p256:
 	cd contracts && npx tsx e2e/eoa/eoa-p256.ts
 
 e2e-eoa: e2e-eoa-batching e2e-eoa-sponsor e2e-eoa-p256
+
+e2e-phase1:
+	cd contracts && npx tsx e2e/phase1/acceptance.ts
 
 e2e-negative: e2e-negative-mempool e2e-negative-protocol
 

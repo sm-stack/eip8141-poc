@@ -97,7 +97,7 @@ async function main() {
     expectFrameCount: 3,
     verifyFrameIndex: 1,
     senderFrameIndex: 2,
-    expectVerifyStatus: "0x4|0x2",
+    expectVerifyStatus: "0x1",
   });
 
   // Verify the account was deployed

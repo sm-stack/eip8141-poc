@@ -31,8 +31,7 @@ Frame 1: SENDER(target, value)   -> execute(target, value, data)
 `contracts/src/CanonicalPaymaster.sol` is the public-mempool canonical paymaster implementation.
 
 - Single storage-backed secp256k1 signer.
-- `validate(bytes)` verifies `r || s || v` over TXPARAM signature hash and approves payment.
-- Enforces low-s and canonical recovery parity.
+- `validate(signatureIndex)` accepts a protocol-verified canonical-message secp256k1 signature from the configured signer and approves payment.
 - `initiateWithdrawal(amount)` schedules a signer withdrawal.
 - `finalizeWithdrawal()` transfers only to the signer after seven days.
 - `pendingWithdrawal()` exposes the amount excluded from framepool solvency.
@@ -44,7 +43,7 @@ Pinned integration values for compiler `0.8.33-develop.2026.7.11+commit.2bacd4c1
 
 | Item | Value |
 |---|---|
-| Runtime code hash | `0x471975c53fcc25c8c4eb88aa1d0611c4ec51932e490ca12e706565f634990dd9` |
+| Runtime code hash | `0x753d8fb13a049dbfd7771540fce6add0de9fd73fa5ec5a74186942d01b65275e` |
 | Signer storage slot | `0` |
 | Pending withdrawal amount slot | `1` |
 | Withdrawal availability slot | `2` |

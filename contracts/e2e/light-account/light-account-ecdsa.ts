@@ -33,7 +33,7 @@ async function main() {
     });
     const receipt = await send(calldata);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x1" });
     testPassed("EOA owner executed successfully");
   }
 
@@ -46,7 +46,7 @@ async function main() {
     });
     const receipt = await send(calldata);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x1" });
     testPassed("Batch execution (no value) succeeded");
   }
 
@@ -70,7 +70,7 @@ async function main() {
     });
     const receipt = await send(calldata);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x1" });
 
     // Verify new owner
     const currentOwner = await ctx.publicClient.readContract({
@@ -92,7 +92,7 @@ async function main() {
     });
     const receipt2 = await send(calldata2, SECOND_OWNER_KEY);
     printReceipt(receipt2);
-    verifyReceipt(receipt2, ctx.walletAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt2, ctx.walletAddr, { expectVerifyStatus: "0x1" });
     testPassed("New owner executed successfully");
   }
 

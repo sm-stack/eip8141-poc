@@ -153,7 +153,7 @@ async function main() {
     const account = createCoinbaseAccount(ctx.walletAddr, 0, DEV_KEY);
     const receipt = await sendAndWait(ctx.publicClient, account, senderCalldata);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x1" });
     passed++;
     testPassed("Valid signature accepted");
   }

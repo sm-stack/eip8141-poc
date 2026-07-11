@@ -33,7 +33,7 @@ async function main() {
     });
     const receipt = await send(calldata, 0, DEV_KEY);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x1" });
     testPassed("ECDSA Owner 1 executed successfully");
   }
 
@@ -46,7 +46,7 @@ async function main() {
     });
     const receipt = await send(calldata, 1, OWNER2_KEY);
     printReceipt(receipt);
-    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x4|0x2" });
+    verifyReceipt(receipt, ctx.walletAddr, { expectVerifyStatus: "0x1" });
     testPassed("ECDSA Owner 2 executed successfully");
   }
 

@@ -12,7 +12,7 @@ export function verifyReceipt(
   } = {}
 ) {
   const {
-    expectVerifyStatus = "0x4",
+    expectVerifyStatus = "0x1",
     expectSenderStatus = "0x1",
     expectFrameCount = 2,
     verifyFrameIndex = 0,
