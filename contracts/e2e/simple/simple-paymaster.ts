@@ -2,8 +2,8 @@
  * E2E: ERC20Paymaster — 5-frame sponsored transaction
  *
  * Frame structure:
- *   Frame 0: VERIFY(sender)     → validate(v,r,s, scope=0) → APPROVE(execution)
- *   Frame 1: VERIFY(paymaster)  → validate()               → APPROVE(payment)
+ *   Frame 0: VERIFY(sender, flags=2)    -> validate(signatureIndex) -> APPROVE(execution)
+ *   Frame 1: VERIFY(paymaster, flags=1) -> validate()              -> APPROVE(payment)
  *   Frame 2: SENDER(erc20)      → token.transfer(paymaster, amount)
  *   Frame 3: SENDER(account)    → account.execute(DEAD_ADDR, 0, 0x)
  *   Frame 4: DEFAULT(paymaster) → postOp(2)
@@ -140,13 +140,13 @@ async function main() {
     args: [2n],
   });
 
-  // Create Simple8141Account with scope=1 (EXECUTION only — paymaster handles payment)
+  // Use execution-only flags; the paymaster handles payment approval.
   const account = toSimple8141Account({
     address: accountAddr,
     owner,
     verifyGasLimit: 200_000n,
     senderGasLimit: 100_000n,
-    scope: 1,
+    scope: 2,
   });
 
   // Create paymaster
@@ -155,7 +155,7 @@ async function main() {
     async signFrameTransaction() {
       return {
         mode: "verify" as const,
-        flags: 2,
+        flags: 1,
         target: paymasterAddr,
         gasLimit: 200_000n,
         value: 0n,

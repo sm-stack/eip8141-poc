@@ -8,7 +8,7 @@
  *   4. Send frame transaction verified by VERIFY_MLDSA_ETH precompile (0x13)
  *
  * Frame layout:
- *   Frame 0: VERIFY(account) → validate(mldsaSig, scope=2) → APPROVE(both)
+ *   Frame 0: VERIFY(account, flags=3) -> validate(mldsaSig, scope=3) -> APPROVE(both)
  *   Frame 1: SENDER(target)  → ETH transfer to DEAD_ADDR
  *
  * Usage: cd contracts && npx tsx e2e/mldsa/mldsa-basic.ts

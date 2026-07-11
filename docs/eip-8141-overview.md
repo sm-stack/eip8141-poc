@@ -1,158 +1,120 @@
-# EIP-8141: Frame Transactions
+# EIP-8141 Frame Transactions
 
-EIP-8141 introduces a new transaction type (`0x06`) that enables native account abstraction on Ethereum. Instead of a single call with a signature, a frame transaction contains a list of **frames** — ordered execution steps with different privilege modes.
+EIP-8141 adds typed transaction `0x06`. A frame transaction names its sender explicitly and executes an ordered list of frames. Authentication is performed by VERIFY frames and protocol-verified transaction signatures.
 
-## Transaction Structure
+## Wire Format
 
-```
-rlp([chain_id, nonce, sender, frames, max_priority_fee_per_gas, max_fee_per_gas,
-     max_fee_per_blob_gas, blob_versioned_hashes])
+The typed payload is:
 
-frame = [mode, target, gas_limit, data]
-```
-
-Key differences from legacy transactions:
-- **`sender` is explicit** — no signature recovery needed. Authentication happens inside VERIFY frames.
-- **No `to`, `value`, or `data` fields** — all execution is expressed as frames.
-- **No signature fields** — the sender contract validates the transaction via the APPROVE opcode.
-
-## Frame Modes
-
-Each frame executes in one of three modes:
-
-| Mode | Value | Caller | Semantics | Purpose |
-|------|-------|--------|-----------|---------|
-| DEFAULT | 0 | `0x00..00aa` (entry point) | Regular call | Contract deployment, post-ops |
-| VERIFY | 1 | `0x00..00aa` (entry point) | STATICCALL (read-only) | Signature validation |
-| SENDER | 2 | `tx.sender` | Regular call | Execution on behalf of the account |
-
-**VERIFY frames** are read-only: `sstore`, `tstore`, `create`, and any state-mutating opcode will revert. They must exit via the APPROVE opcode. Any other termination (return, revert, out-of-gas) invalidates the entire transaction.
-
-**SENDER frames** require prior approval — the sender must have already APPROVEd execution in an earlier VERIFY frame.
-
-## APPROVE Opcode (`0xaa`)
-
-APPROVE terminates a VERIFY frame with an approval signal:
-
-| Scope | Status Code | Meaning |
-|-------|-------------|---------|
-| 0 | 2 (APPROVED_EXECUTION) | Sender authorizes SENDER frames |
-| 1 | 3 (APPROVED_PAYMENT) | Target pays gas fees |
-| 2 | 4 (APPROVED_BOTH) | Both execution and payment |
-
-Rules:
-- Execution approval must come first. Payment approval cannot precede it.
-- Each approval type can only occur once per transaction.
-- The transaction is invalid if no payment approval is given by the end.
-
-## Transaction Parameters (TXPARAMLOAD)
-
-Contracts can introspect the transaction via `TXPARAMLOAD` (`0xb0`):
-
-| Parameter | Description |
-|-----------|-------------|
-| `0x00` | Transaction type (6) |
-| `0x01` | Nonce |
-| `0x02` | Sender address |
-| `0x06` | Max cost (worst-case total fee) |
-| `0x08` | Signature hash (`sigHash`) |
-| `0x09` | Frame count |
-| `0x10` | Current frame index |
-| `0x11` | Frame target (by index) |
-| `0x12` | Frame data (by index) |
-| `0x13` | Frame gas limit (by index) |
-| `0x14` | Frame mode (by index) |
-| `0x15` | Frame status (by index, past frames only) |
-
-This enables **cross-frame introspection**: a VERIFY frame can read the calldata of any other frame (except VERIFY frames, which return size 0).
-
-## Signature Hash
-
-The `sigHash` is `keccak256(rlp(tx))` with VERIFY frame data zeroed out:
-
-```python
-def compute_sig_hash(tx):
-    for frame in tx.frames:
-        if frame.mode == VERIFY:
-            frame.data = b""  # elide VERIFY data
-    return keccak256(rlp(tx))
+```text
+0x06 || rlp([
+  chain_id,
+  nonce,
+  sender,
+  frames,
+  signatures,
+  max_priority_fee_per_gas,
+  max_fee_per_gas,
+  max_fee_per_blob_gas,
+  blob_versioned_hashes
+])
 ```
 
-VERIFY data is excluded because:
-1. Signatures can't be part of the data they sign (circular dependency).
-2. Sponsor/paymaster data can be added after the sender signs.
-3. Enables future signature aggregation schemes.
+Each frame has six fields:
 
-Frame targets, gas limits, and non-VERIFY calldata are all covered by the hash, protecting against manipulation.
+```text
+[mode, flags, target, gas_limit, value, data]
+```
+
+Each transaction signature has four fields:
+
+```text
+[scheme, signer, msg, signature]
+```
+
+Canonical RLP integer rules apply. Zero is encoded as an empty byte string. The maximum frame count is 64.
+
+## Frame Modes And Flags
+
+| Mode | Value | Caller and behavior |
+|---|---:|---|
+| DEFAULT | 0 | Normal call from the protocol entry point |
+| VERIFY | 1 | Static validation call that must terminate with APPROVE |
+| SENDER | 2 | Call as `tx.sender`; `value` is exposed as CALLVALUE |
+
+Flag bits 0 and 1 are the allowed APPROVE scope. Bit 2 (`0x04`) joins the current frame to the following frame as an atomic batch. The final frame cannot set the atomic flag.
+
+| Scope | Value |
+|---|---:|
+| payment | `0x01` |
+| execution | `0x02` |
+| execution and payment | `0x03` |
+
+APPROVE is rejected if its scope contains bits not allowed by the current frame flags.
+
+## Transaction Signatures
+
+Supported schemes are secp256k1 (`0`) and P256 (`1`). The protocol validates every signature before frame execution.
+
+- secp256k1 signature bytes are `v || r || s`, where `v` is raw parity `0` or `1`.
+- P256 signature bytes are `r || s || qx || qy`.
+- Empty `msg` means the signature verifies the canonical transaction signature hash.
+- A non-empty `msg` must be exactly 32 bytes and cannot be all zero.
+
+The signature hash is `keccak256(typed_transaction)`, with only the raw signature bytes of empty-message signatures replaced by empty bytes. Frame data is not elided. `SIGPARAM` exposes signature metadata but never raw signature bytes.
+
+## Introspection Opcodes
+
+| Opcode | Name | Purpose |
+|---:|---|---|
+| `0xB0` | TXPARAM | Read scalar transaction metadata |
+| `0xB1` | FRAMEDATALOAD | Load 32 bytes from a frame's data |
+| `0xB2` | FRAMEDATACOPY | Copy bytes from a frame's data |
+| `0xB3` | FRAMEPARAM | Read frame metadata and earlier status |
+| `0xB4` | SIGPARAM | Read signature signer, scheme, message, or length |
+| `0xAA` | APPROVE | Terminate VERIFY execution and approve a scope |
+
+FRAMEPARAM status is available only for earlier frames and returns `0` for failed or skipped execution and `1` for success. Receipts retain the distinct skipped status described below.
 
 ## Gas Accounting
 
-```
-total_gas = 15,000 (intrinsic) + calldata_gas(rlp(frames)) + sum(frame.gas_limit)
-```
-
-- Each frame has an independent gas allocation. Unused gas from one frame cannot be used by another.
-- The sender does **not** prepay gas. Payment is collected when a frame APPROVEs with `SCOPE_PAYMENT`.
-- Unused gas is refunded to the **payer** (the contract that approved payment), not the sender.
-- `maxCost` = total_gas * max_fee_per_gas + blob fees. This is the worst-case cost, accessible via TXPARAMLOAD.
-
-## Common Frame Patterns
-
-### Simple Transaction (2 frames)
-
-```
-Frame 0: VERIFY(sender)  -> validate(sig) -> APPROVE(both)
-Frame 1: SENDER(target)  -> execute(target, value, data)
+```text
+total_gas =
+    15,000
+  + 475 * len(frames)
+  + calldata7623(rlp(frames))
+  + calldata7623(rlp(signatures))
+  + 2,800 * secp256k1_signature_count
+  + 6,700 * p256_signature_count
+  + sum(frame.gas_limit)
 ```
 
-### Sponsored Transaction (3+ frames)
+Unused frame gas, including gas assigned to skipped frames, is returned to the payer and block gas pool. `TXPARAM(0x06)` exposes the maximum transaction cost.
 
-```
-Frame 0: VERIFY(sender)    -> validate(sig)   -> APPROVE(execution)
-Frame 1: VERIFY(paymaster)  -> validate()      -> APPROVE(payment)
-Frame 2: SENDER(target)     -> execute(...)
-```
+## Atomic Batches
 
-### ERC-20 Sponsored Transaction (5 frames)
+If a frame with atomic flag `0x04` fails, state changes from the linked batch are rolled back and remaining linked frames are skipped. Receipt statuses are:
 
-```
-Frame 0: VERIFY(sender)     -> validate(sig, scope=0) -> APPROVE(execution)
-Frame 1: VERIFY(paymaster)  -> validate()              -> APPROVE(payment)
-Frame 2: SENDER(ERC20)      -> token.transfer(paymaster, amount)
-Frame 3: SENDER(account)    -> account.execute(target, value, data)
-Frame 4: DEFAULT(paymaster) -> postOp()
-```
+| Status | Meaning |
+|---:|---|
+| `0` | failed |
+| `1` | successful |
+| `3` | skipped by atomic rollback |
 
-## EOA Default Code
+The transaction receipt also includes the resolved `payer` and one `frameReceipts` entry per frame.
 
-When a frame targets an address with no deployed code, the protocol executes built-in default code logic based on the first byte of `frame.data`:
+## Expiry Verifier
 
-- **VERIFY** (low nibble `0x1`): High nibble encodes APPROVE scope. Second byte selects signature type (`0x00` ECDSA, `0x01` P256). Verifies the signature against `keccak256(sigHash || data_without_signature)`.
-- **SENDER** (low nibble `0x2`): Remaining data is RLP-encoded `[[target, value, data], ...]`. Executes each call sequentially.
-- **DEFAULT**: Always reverts.
+Address `0x0000000000000000000000000000000000008141` is installed in genesis with the canonical expiry runtime. An expiry frame is a VERIFY frame with flags and value equal to zero and exactly eight bytes of big-endian deadline data. Only one expiry frame is allowed. Expired transactions are rejected and dropped during framepool revalidation.
 
-This enables EOAs to participate in frame transactions — batching, gas sponsorship, and P256 signing — without deploying a smart contract.
+## Paymasters
 
-## Transaction Receipt
+A sender may approve execution while a second VERIFY frame approves payment. Non-canonical paymasters are limited to one pending public-mempool transaction.
 
-```
-[cumulative_gas_used, payer, [frame_receipt, ...]]
-frame_receipt = [status, gas_used, logs]
+Canonical paymasters are identified by exact runtime code hash. Nodes reserve pending maximum costs and compute:
+
+```text
+available = balance - reserved_pending_cost - pending_withdrawal_amount
 ```
 
-The receipt includes a `payer` field (the address that approved payment) and per-frame receipts with individual gas usage and logs.
-
-## Isolation Between Frames
-
-- **Transient storage** (`tstore`/`tload`) is discarded between frames.
-- **Warm/cold access lists** are shared across frames for accurate gas accounting.
-- **`ORIGIN`** returns the frame's caller (entry point or sender), not `tx.origin`.
-
-## Protocol Constants
-
-| Constant | Value |
-|----------|-------|
-| Transaction type | `0x06` |
-| Entry point address | `0x00..00aa` |
-| Intrinsic gas | 15,000 |
-| Max frames | 1,000 |
+The reference `CanonicalPaymaster` uses a seven-day delayed withdrawal. Its signer is storage-backed so every instance has the same runtime code. The current pinned runtime hash is documented in [reference-implementations.md](reference-implementations.md).

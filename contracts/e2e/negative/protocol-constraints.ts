@@ -165,7 +165,7 @@ async function main() {
 
     const msg = await sendExpectingRejection(
       publicClient, params,
-      [{ index: 0, scope: 2 }],
+      [{ index: 0, scope: 1 }],
       "payment approval without prior execution"
     );
     step(`Rejected: ${msg.slice(0, 120)}`);
@@ -197,7 +197,7 @@ async function main() {
 
     const msg = await sendExpectingRejection(
       publicClient, params,
-      [{ index: 0, scope: 1 }],
+      [{ index: 0, scope: 2 }],
       "no payer approved"
     );
     step(`Rejected: ${msg.slice(0, 120)}`);
@@ -230,7 +230,7 @@ async function main() {
 
     const msg = await sendExpectingRejection(
       publicClient, params,
-      [{ index: 0, scope: 1 }, { index: 1, scope: 1 }],
+      [{ index: 0, scope: 2 }, { index: 1, scope: 2 }],
       "re-approval"
     );
     step(`Rejected: ${msg.slice(0, 120)}`);

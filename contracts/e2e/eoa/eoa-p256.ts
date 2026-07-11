@@ -5,8 +5,8 @@
  * The EOA address is derived as keccak256(qx || qy)[12:].
  *
  * Frame layout:
- *   Frame 0: VERIFY(sender) → P256 verify → APPROVE(0x2, both)
- *   Frame 1: SENDER(sender) → RLP batch: ETH transfer
+ *   Frame 0: VERIFY(sender, flags=3) -> P256 tx signature -> APPROVE(both)
+ *   Frame 1: SENDER(sender) -> ETH transfer
  *
  * Usage: cd contracts && npx tsx e2e/eoa/eoa-p256.ts
  */

@@ -9,13 +9,14 @@ A reference implementation for [EIP-8141](https://github.com/ethereum/EIPs/pull/
 
 ```
 ├── 8141-geth/             # Modified go-ethereum with frame transaction support
-├── solidity-eip8141/      # Modified solc with EIP-8141 opcodes (APPROVE, TXPARAMLOAD, ...)
+├── solidity-eip8141/      # Modified solc with APPROVE, TXPARAM, FRAMEPARAM, and SIGPARAM
 ├── viem-eip8141/          # Modified viem with frame transaction client support
 ├── contracts/             # Solidity smart contracts (Foundry)
 │   ├── src/
 │   │   ├── FrameTxLib.sol            # Library wrapping EIP-8141 opcodes
 │   │   ├── Simple8141Account.sol     # Minimal single-owner smart account
 │   │   ├── SimplePaymaster.sol       # Gas sponsorship paymaster
+│   │   ├── CanonicalPaymaster.sol    # Code-hash-pinned delayed-withdrawal paymaster
 │   │   ├── ERC20Paymaster.sol        # ERC20 token paymaster
 │   │   ├── Create2Deployer.sol       # Generic CREATE2 deployer for deploy-in-one-tx
 │   │   └── example/
@@ -95,6 +96,8 @@ Start a local dev node with EIP-8141 support:
 make devnet        # starts geth --dev on port 18545
 make devnet-stop   # stops the dev node
 ```
+
+The developer genesis installs the expiry verifier at `0x0000000000000000000000000000000000008141`. Canonical paymaster instances are deployed as needed; their pinned runtime code hash is `0x471975c53fcc25c8c4eb88aa1d0611c4ec51932e490ca12e706565f634990dd9`.
 
 ## E2E Tests
 

@@ -12,6 +12,8 @@ if [ ! -x "$GETH_BIN" ]; then
 fi
 
 echo "=== Starting geth dev node (chainID=1337, http=18545) ==="
+echo "EIP-8141 expiry verifier: 0x0000000000000000000000000000000000008141"
+echo "CanonicalPaymaster runtime hash: 0x471975c53fcc25c8c4eb88aa1d0611c4ec51932e490ca12e706565f634990dd9"
 exec "$GETH_BIN" \
   --dev \
   --dev.period 1 \
