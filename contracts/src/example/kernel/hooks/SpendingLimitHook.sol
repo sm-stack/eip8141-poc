@@ -167,13 +167,13 @@ contract SpendingLimitHook is IHook8141 {
     ///      BATCH executionCalldata = abi.encode(Execution[])
     function _extractValueFromSenderFrame(uint256 idx) internal pure returns (uint256) {
         // Read ExecMode to determine call type
-        bytes32 execModeWord = FrameTxLib.frameDataLoad(idx, 4); // skip 4B selector
+        bytes32 execModeWord = FrameTxLib.frameDataLoad(4, idx); // skip 4B selector
         uint8 callType = uint8(bytes1(execModeWord));
 
         if (callType == 0x00) {
             // SINGLE: value is at executionCalldata[20:52]
             // Frame offset: 4(sel) + 32(mode) + 32(offset) + 32(len) + 20(target) = 120
-            return uint256(FrameTxLib.frameDataLoad(idx, 120));
+            return uint256(FrameTxLib.frameDataLoad(120, idx));
         } else if (callType == 0x01) {
             // BATCH: sum values from ABI-encoded Execution[]
             return _sumBatchValues(idx);

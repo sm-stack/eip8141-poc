@@ -11,7 +11,7 @@ import {FrameTxLib} from "./FrameTxLib.sol";
 ///      as compensation from the transaction sender.
 ///
 ///      Frame transaction structure (5-frame):
-///        Frame 0: VERIFY(sender)     → account.validate(v,r,s, scope=0) → APPROVE(execution)
+///        Frame 0: VERIFY(sender, flags=2) → account.validate(sigIndex) → APPROVE(execution)
 ///        Frame 1: VERIFY(paymaster)  → paymaster.validate()             → APPROVE(payment)
 ///        Frame 2: SENDER(erc20)      → token.transfer(paymaster, amount)
 ///        Frame 3: SENDER(account)    → account.execute(target, value, data)
@@ -59,12 +59,12 @@ contract ERC20Paymaster {
         uint256 transferFrameIdx = FrameTxLib.currentFrameIndex() + 1;
 
         // 1. Verify selector is transfer(address,uint256)
-        bytes4 selector = bytes4(FrameTxLib.frameDataLoad(transferFrameIdx, 0));
+        bytes4 selector = bytes4(FrameTxLib.frameDataLoad(0, transferFrameIdx));
         if (selector != TRANSFER_SELECTOR) revert InvalidTransferSelector();
 
         // 2. Verify recipient is this contract
         address recipient = address(uint160(uint256(
-            FrameTxLib.frameDataLoad(transferFrameIdx, 4)
+            FrameTxLib.frameDataLoad(4, transferFrameIdx)
         )));
         if (recipient != address(this)) revert InvalidRecipient();
 
@@ -74,7 +74,7 @@ contract ERC20Paymaster {
         if (rate == 0) revert TokenNotAccepted();
 
         // 4. Verify amount covers gas cost
-        uint256 amount = uint256(FrameTxLib.frameDataLoad(transferFrameIdx, 36));
+        uint256 amount = uint256(FrameTxLib.frameDataLoad(36, transferFrameIdx));
         uint256 requiredAmount = FrameTxLib.maxCost() * rate / 1e18;
         if (amount < requiredAmount) revert InsufficientPayment();
 

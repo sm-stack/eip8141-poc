@@ -30,7 +30,7 @@ contract SelectorPolicy8141 is IPolicy8141 {
         override
         returns (uint256)
     {
-        bytes4 selector = bytes4(FrameTxLib.frameDataLoad(senderFrameIndex, 0));
+        bytes4 selector = bytes4(FrameTxLib.frameDataLoad(0, senderFrameIndex));
         if (!allowedSelectors[msg.sender][id][selector]) {
             return 1; // fail
         }

@@ -9,11 +9,11 @@ import {FrameTxLib} from "./FrameTxLib.sol";
 /// @dev Supports two frame transaction patterns:
 ///
 ///   Example 1 — Simple Transaction:
-///     Frame 0: VERIFY(sender)  → validate(v, r, s, scope=2) → APPROVE(both)
+///     Frame 0: VERIFY(sender, flags=3) → validate(signatureIndex) → APPROVE(both)
 ///     Frame 1: SENDER(target)  → execute(target, value, data)
 ///
 ///   Example 2 — Sponsored Transaction:
-///     Frame 0: VERIFY(sender)  → validate(v, r, s, scope=0) → APPROVE(execution)
+///     Frame 0: VERIFY(sender, flags=2) → validate(signatureIndex) → APPROVE(execution)
 ///     Frame 1: VERIFY(sponsor) → sponsor.validate()          → APPROVE(payment)
 ///     Frame 2: SENDER(erc20)   → token.transfer(sponsor, fee)
 ///     Frame 3: SENDER(target)  → execute(target, value, data)
@@ -25,28 +25,30 @@ contract Simple8141Account {
 
     error InvalidCaller();
     error InvalidSignature();
+    error InvalidApprovalScope();
     error ExecutionFailed();
 
     constructor(address _owner) {
         owner = _owner;
     }
 
-    /// @notice Validation entry point, called in a VERIFY frame.
-    /// @param v ECDSA recovery id
-    /// @param r ECDSA signature r
-    /// @param s ECDSA signature s
-    /// @param scope Approval scope: 0=execution, 1=payment, 2=both
-    /// @dev Calldata layout: abi.encodeWithSelector(this.validate.selector, v, r, s, scope)
-    ///      The function reads the canonical sig hash via TXPARAMLOAD(0x08),
-    ///      recovers the signer, checks signer==owner, and calls APPROVE.
+    /// @notice Approve a protocol-verified transaction-level secp256k1 signature.
+    /// @param signatureIndex Index into tx.signatures.
+    /// @dev The protocol verifies the raw signature before execution. This function
+    ///      checks that its metadata names this account's owner and uses the canonical
+    ///      transaction sig hash, then approves the scope allowed by frame.flags.
     ///      This function does NOT return — APPROVE terminates execution like RETURN.
-    function validate(uint8 v, bytes32 r, bytes32 s, uint8 scope) external view {
+    function validate(uint256 signatureIndex) external view {
         if (msg.sender != ENTRY_POINT) revert InvalidCaller();
+        if (signatureIndex >= FrameTxLib.signatureCount()) revert InvalidSignature();
+        if (FrameTxLib.signatureScheme(signatureIndex) != FrameTxLib.SIGNATURE_SCHEME_SECP256K1) {
+            revert InvalidSignature();
+        }
+        if (FrameTxLib.signatureSigner(signatureIndex) != owner) revert InvalidSignature();
+        if (FrameTxLib.signatureMessage(signatureIndex) != bytes32(0)) revert InvalidSignature();
 
-        bytes32 hash = FrameTxLib.sigHash();
-        address signer = ecrecover(hash, v, r, s);
-        if (signer != owner || signer == address(0)) revert InvalidSignature();
-
+        uint8 scope = FrameTxLib.currentFrameAllowedScope();
+        if (scope == 0) revert InvalidApprovalScope();
         FrameTxLib.approveEmpty(scope);
     }
 
@@ -55,7 +57,7 @@ contract Simple8141Account {
     /// @param value ETH value to send
     /// @param data Calldata for the target call
     /// @dev In a SENDER frame, msg.sender == tx.sender == address(this).
-    function execute(address target, uint256 value, bytes calldata data) external {
+    function execute(address target, uint256 value, bytes calldata data) external payable {
         if (msg.sender != address(this)) revert InvalidCaller();
 
         (bool success,) = target.call{value: value}(data);

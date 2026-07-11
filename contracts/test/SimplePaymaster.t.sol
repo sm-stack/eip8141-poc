@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Test} from "forge-std/Test.sol";
+import {TestBase} from "./TestBase.sol";
 import {SimplePaymaster} from "../src/SimplePaymaster.sol";
 
-contract SimplePaymasterTest is Test {
+contract SimplePaymasterTest is TestBase {
     SimplePaymaster paymaster;
     address paymasterSigner;
 
@@ -15,12 +15,12 @@ contract SimplePaymasterTest is Test {
 
     // ── Constructor ──────────────────────────────────────────────────
 
-    function test_signer() public view {
+    function test_signer() public {
         assertEq(paymaster.signer(), paymasterSigner);
     }
 
     // ── validate ─────────────────────────────────────────────────────
-    // Note: validate() relies on EIP-8141 opcodes (TXPARAMLOAD, APPROVE)
+    // Note: validate() relies on EIP-8141 opcodes (TXPARAM, APPROVE)
     // which are not available in standard forge test EVM. Full validation
     // testing requires the custom geth devnet.
 

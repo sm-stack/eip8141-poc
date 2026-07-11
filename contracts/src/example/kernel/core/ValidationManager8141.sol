@@ -72,7 +72,7 @@ import {
 ///      Key EIP-8141 advantages:
 ///      - Hook resolution: SENDER frames derive hook from validator config in storage
 ///      - Selector ACL via frameDataLoad() cross-frame read (no executeUserOp wrapper needed)
-///      - Policy data via frameDataLoad(senderFrame, offset) for rich execution context
+///      - Policy data via frameDataLoad(offset, senderFrame) for rich execution context
 ///      - Enable data in VERIFY calldata (excluded from sigHash — cleaner separation)
 ///      - Nonce-based replay protection (per-validator nonce space)
 abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookManager8141, ExecutorManager8141 {
@@ -321,7 +321,7 @@ abstract contract ValidationManager8141 is EIP712, SelectorManager8141, HookMana
     /// @param vMode Validation mode (DEFAULT or ENABLE)
     /// @param vId The validator/permission identifier
     /// @param account The account address being validated
-    /// @param sigHash The canonical signature hash from TXPARAMLOAD(0x08)
+    /// @param sigHash The canonical signature hash from TXPARAM(0x08)
     /// @param senderFrameIndex The index of the SENDER frame for cross-frame data
     /// @param signature The raw signature bytes
     /// @return validationData Packed validation data (validAfter, validUntil, result)

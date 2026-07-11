@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Test} from "forge-std/Test.sol";
+import {TestBase} from "./TestBase.sol";
 import {Simple8141Account} from "../src/Simple8141Account.sol";
 
-contract Simple8141AccountTest is Test {
+contract Simple8141AccountTest is TestBase {
     Simple8141Account account;
     address owner;
 
@@ -15,7 +15,7 @@ contract Simple8141AccountTest is Test {
 
     // ── Constructor ──────────────────────────────────────────────────
 
-    function test_owner() public view {
+    function test_owner() public {
         assertEq(account.owner(), owner);
     }
 
@@ -40,16 +40,21 @@ contract Simple8141AccountTest is Test {
         assertEq(target.balance, sendAmount);
     }
 
+    function test_execute_acceptsSenderFrameValue() public {
+        vm.deal(address(account), 1 ether);
+
+        vm.prank(address(account));
+        account.execute{value: 0.25 ether}(address(0xdead), 0, "");
+
+        assertEq(address(account).balance, 1 ether);
+    }
+
     function test_execute_callWithData() public {
         // Deploy a simple counter target
         Counter counter = new Counter();
 
         vm.prank(address(account));
-        account.execute(
-            address(counter),
-            0,
-            abi.encodeWithSelector(Counter.increment.selector)
-        );
+        account.execute(address(counter), 0, abi.encodeWithSelector(Counter.increment.selector));
 
         assertEq(counter.count(), 1);
     }
@@ -73,13 +78,13 @@ contract Simple8141AccountTest is Test {
     }
 
     // ── validate ─────────────────────────────────────────────────────
-    // Note: validate() relies on EIP-8141 opcodes (TXPARAMLOAD, APPROVE)
+    // Note: validate() relies on EIP-8141 opcodes (TXPARAM, FRAMEPARAM, SIGPARAM, APPROVE)
     // which are not available in standard forge test EVM. Full validation
     // testing requires the custom geth devnet (see devnet/send_frame_tx.ts).
 
     function test_validate_revertsIfNotEntryPoint() public {
         vm.expectRevert(Simple8141Account.InvalidCaller.selector);
-        account.validate(27, bytes32(0), bytes32(0), 2);
+        account.validate(0);
     }
 }
 
@@ -87,6 +92,7 @@ contract Simple8141AccountTest is Test {
 
 contract Counter {
     uint256 public count;
+
     function increment() external {
         count++;
     }

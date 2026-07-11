@@ -31,7 +31,7 @@ contract MaliciousValidator {
         if (msg.sender != ENTRY_POINT) revert InvalidCaller();
         _verifySignature(v, r, s);
         assembly { mstore(0x00, timestamp()) }
-        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_BOTH);
+        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_EXECUTION_AND_PAYMENT);
     }
 
     /// @notice Uses COINBASE in VERIFY frame — banned by OP-011.
@@ -39,7 +39,7 @@ contract MaliciousValidator {
         if (msg.sender != ENTRY_POINT) revert InvalidCaller();
         _verifySignature(v, r, s);
         assembly { mstore(0x00, coinbase()) }
-        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_BOTH);
+        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_EXECUTION_AND_PAYMENT);
     }
 
     /// @notice Uses NUMBER in VERIFY frame — banned by OP-011.
@@ -47,7 +47,7 @@ contract MaliciousValidator {
         if (msg.sender != ENTRY_POINT) revert InvalidCaller();
         _verifySignature(v, r, s);
         assembly { mstore(0x00, number()) }
-        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_BOTH);
+        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_EXECUTION_AND_PAYMENT);
     }
 
     /// @notice Uses ORIGIN in VERIFY frame — banned by OP-011.
@@ -55,7 +55,7 @@ contract MaliciousValidator {
         if (msg.sender != ENTRY_POINT) revert InvalidCaller();
         _verifySignature(v, r, s);
         assembly { mstore(0x00, origin()) }
-        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_BOTH);
+        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_EXECUTION_AND_PAYMENT);
     }
 
     // ─── OP-080: Banned BALANCE opcodes ─────────────────────────────────
@@ -65,7 +65,7 @@ contract MaliciousValidator {
         if (msg.sender != ENTRY_POINT) revert InvalidCaller();
         _verifySignature(v, r, s);
         assembly { mstore(0x00, selfbalance()) }
-        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_BOTH);
+        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_EXECUTION_AND_PAYMENT);
     }
 
     /// @notice Uses BALANCE on an address in VERIFY frame — banned by OP-080.
@@ -73,7 +73,7 @@ contract MaliciousValidator {
         if (msg.sender != ENTRY_POINT) revert InvalidCaller();
         _verifySignature(v, r, s);
         assembly { mstore(0x00, balance(0xdead)) }
-        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_BOTH);
+        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_EXECUTION_AND_PAYMENT);
     }
 
     // ─── OP-041: EXTCODE on codeless address ────────────────────────────
@@ -84,7 +84,7 @@ contract MaliciousValidator {
         _verifySignature(v, r, s);
         // 0xdeadbeefdeadbeef has no deployed code
         assembly { mstore(0x00, extcodesize(0xdeadbeefdeadbeef)) }
-        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_BOTH);
+        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_EXECUTION_AND_PAYMENT);
     }
 
     // ─── OP-012: GAS not immediately before CALL ────────────────────────
@@ -94,7 +94,7 @@ contract MaliciousValidator {
         if (msg.sender != ENTRY_POINT) revert InvalidCaller();
         _verifySignature(v, r, s);
         assembly { mstore(0x00, gas()) }
-        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_BOTH);
+        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_EXECUTION_AND_PAYMENT);
     }
 
     // ─── STO-021: Unassociated external storage ─────────────────────────
@@ -110,7 +110,7 @@ contract MaliciousValidator {
             let ok := staticcall(gas(), target, 0x00, 0x20, 0x00, 0x20)
             if iszero(ok) { revert(0, 0) }
         }
-        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_BOTH);
+        FrameTxLib.approveEmpty(FrameTxLib.SCOPE_EXECUTION_AND_PAYMENT);
     }
 
     // ─── Normal validate for protocol constraint tests ──────────────────

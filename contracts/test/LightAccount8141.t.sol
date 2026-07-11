@@ -25,12 +25,12 @@ contract LightAccount8141Test is Test {
 
     // ── Factory Tests ─────────────────────────────────────────────────
 
-    function test_FactoryDeploy() public view {
+    function test_FactoryDeploy() public {
         assertEq(wallet.owner(), ownerAddr);
         assertTrue(address(wallet).code.length > 0);
     }
 
-    function test_FactoryDeterministicAddress() public view {
+    function test_FactoryDeterministicAddress() public {
         address predicted = factory.getAddress(ownerAddr, 0);
         assertEq(predicted, address(wallet));
     }
@@ -57,7 +57,7 @@ contract LightAccount8141Test is Test {
         factory.createAccount(address(0), 0);
     }
 
-    function test_InitCodeHash() public view {
+    function test_InitCodeHash() public {
         bytes32 hash = factory.initCodeHash();
         assertTrue(hash != bytes32(0));
     }
@@ -80,7 +80,7 @@ contract LightAccount8141Test is Test {
 
     // ── Owner Tests ───────────────────────────────────────────────────
 
-    function test_Owner() public view {
+    function test_Owner() public {
         assertEq(wallet.owner(), ownerAddr);
     }
 
@@ -181,7 +181,7 @@ contract LightAccount8141Test is Test {
 
     // ── ERC-1271 Tests ────────────────────────────────────────────────
 
-    function test_GetMessageHash() public view {
+    function test_GetMessageHash() public {
         bytes32 hash1 = wallet.getMessageHash(abi.encode(keccak256("test")));
         assertTrue(hash1 != bytes32(0));
 
@@ -189,7 +189,7 @@ contract LightAccount8141Test is Test {
         assertTrue(hash1 != hash2);
     }
 
-    function test_DomainSeparator() public view {
+    function test_DomainSeparator() public {
         bytes32 ds = wallet.domainSeparator();
         assertTrue(ds != bytes32(0));
 
@@ -205,7 +205,7 @@ contract LightAccount8141Test is Test {
         assertEq(ds, expected);
     }
 
-    function test_Eip712Domain() public view {
+    function test_Eip712Domain() public {
         (
             bytes1 fields,
             string memory name,
@@ -246,11 +246,11 @@ contract LightAccount8141Test is Test {
 
     // ── Proxy Tests ───────────────────────────────────────────────────
 
-    function test_Implementation() public view {
+    function test_Implementation() public {
         address implAddr = wallet.implementation();
         assertEq(implAddr, address(impl));
     }
 
-    // NOTE: validate() requires EIP-8141 TXPARAMLOAD opcode which is not available
+    // NOTE: validate() requires EIP-8141 TXPARAM opcode which is not available
     // in Forge's revm. It is tested via E2E on the custom geth devnet.
 }

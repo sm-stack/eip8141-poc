@@ -261,7 +261,7 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
 
         // EIP-8141 native selector ACL: read SENDER frame selector via cross-frame reading
         if (vType != VALIDATION_TYPE_ROOT) {
-            bytes4 senderSelector = bytes4(FrameTxLib.frameDataLoad(senderFrameIdx, 0));
+            bytes4 senderSelector = bytes4(FrameTxLib.frameDataLoad(0, senderFrameIdx));
             if (!vs.allowedSelectors[vId][senderSelector]) {
                 revert InvalidSelector();
             }
@@ -757,12 +757,12 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
         if (!_isCallableHook(hook)) return;
 
         // SENDER frame must call executeHooked
-        bytes4 senderSelector = bytes4(FrameTxLib.frameDataLoad(senderFrameIdx, 0));
+        bytes4 senderSelector = bytes4(FrameTxLib.frameDataLoad(0, senderFrameIdx));
         if (senderSelector != this.executeHooked.selector) revert InvalidSelector();
 
         // vId in SENDER calldata must match the validation vId
         // executeHooked(bytes21 vId, ...) — bytes21 is right-padded in ABI encoding
-        bytes21 senderVId = bytes21(FrameTxLib.frameDataLoad(senderFrameIdx, 4));
+        bytes21 senderVId = bytes21(FrameTxLib.frameDataLoad(4, senderFrameIdx));
         if (senderVId != ValidationId.unwrap(vId)) revert InvalidSelector();
     }
 
@@ -770,10 +770,10 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
     ///      Permissions always require executeHooked to ensure stateful policy consumption.
     ///      Verifies both the selector and the vId in SENDER calldata match.
     function _enforcePermissionExecution(ValidationId vId, uint256 senderFrameIdx) internal view {
-        bytes4 senderSelector = bytes4(FrameTxLib.frameDataLoad(senderFrameIdx, 0));
+        bytes4 senderSelector = bytes4(FrameTxLib.frameDataLoad(0, senderFrameIdx));
         if (senderSelector != this.executeHooked.selector) revert InvalidSelector();
 
-        bytes21 senderVId = bytes21(FrameTxLib.frameDataLoad(senderFrameIdx, 4));
+        bytes21 senderVId = bytes21(FrameTxLib.frameDataLoad(4, senderFrameIdx));
         if (senderVId != ValidationId.unwrap(vId)) revert InvalidSelector();
     }
 
@@ -829,7 +829,8 @@ contract Kernel8141 is IERC7579Account8141, ValidationManager8141 {
                     && FrameTxLib.frameTarget(i) == address(this)
             ) {
                 uint8 status = FrameTxLib.frameStatus(i);
-                if (status < 2) revert VerifyDidNotApprove(); // APPROVED_EXECUTION+
+                // A successful VERIFY frame must have terminated through APPROVE.
+                if (status != 1) revert VerifyDidNotApprove();
                 return;
             }
         }

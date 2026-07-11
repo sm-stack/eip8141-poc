@@ -134,7 +134,7 @@ contract CoinbaseSmartWallet8141 is UUPSUpgradeable, Receiver {
         uint256 senderFrameIdx = _findSenderFrameIndex();
 
         // Verify SENDER frame calls executeWithoutChainIdValidation
-        bytes4 senderSelector = bytes4(FrameTxLib.frameDataLoad(senderFrameIdx, 0));
+        bytes4 senderSelector = bytes4(FrameTxLib.frameDataLoad(0, senderFrameIdx));
         if (senderSelector != this.executeWithoutChainIdValidation.selector) {
             revert SelectorNotAllowed(senderSelector);
         }

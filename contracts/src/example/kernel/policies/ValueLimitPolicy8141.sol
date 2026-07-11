@@ -122,11 +122,11 @@ contract ValueLimitPolicy8141 is IPolicy8141 {
     ///      For BATCH: sum all Execution[].value entries
     ///      For DELEGATECALL: no value transfer
     function _extractValue(uint256 frameIdx) internal pure returns (uint256) {
-        uint8 callType = uint8(bytes1(FrameTxLib.frameDataLoad(frameIdx, 36)));
+        uint8 callType = uint8(bytes1(FrameTxLib.frameDataLoad(36, frameIdx)));
 
         if (callType == 0x00) {
             // SINGLE: value at offset 152 (132 + 20)
-            return uint256(FrameTxLib.frameDataLoad(frameIdx, 152));
+            return uint256(FrameTxLib.frameDataLoad(152, frameIdx));
         } else if (callType == 0x01) {
             // BATCH: sum values from ABI-encoded Execution[]
             return _sumBatchValues(frameIdx);

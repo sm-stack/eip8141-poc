@@ -51,7 +51,7 @@ contract MLDSA8141Account {
 
     /// @notice Validation entry point, called in a VERIFY frame.
     /// @param signature ML-DSA-ETH signature (2,420 bytes: c_tilde + z + h).
-    /// @param scope Approval scope: 0=execution, 1=payment, 2=both.
+    /// @param scope Approval scope bitmask: 1=payment, 2=execution, 3=both.
     function validate(bytes calldata signature, uint8 scope) external view {
         if (msg.sender != ENTRY_POINT) revert InvalidCaller();
         if (signature.length != SIG_SIZE) revert InvalidSignature();
@@ -93,7 +93,7 @@ contract MLDSA8141Account {
     /// @param target Address to call.
     /// @param value ETH value to send.
     /// @param data Calldata for the target call.
-    function execute(address target, uint256 value, bytes calldata data) external {
+    function execute(address target, uint256 value, bytes calldata data) external payable {
         if (msg.sender != address(this)) revert InvalidCaller();
 
         (bool success,) = target.call{value: value}(data);
