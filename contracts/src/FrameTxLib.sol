@@ -15,6 +15,7 @@ library FrameTxLib {
     uint8 internal constant FRAME_FLAG_ATOMIC_BATCH = 0x04;
 
     address internal constant EXPIRY_VERIFIER = 0x0000000000000000000000000000000000008141;
+    address internal constant NONCE_MANAGER = 0x0000000000000000000000000000000000008250;
 
     // TXPARAM selectors.
     uint8 internal constant TX_PARAM_TYPE = 0x00;
@@ -29,6 +30,10 @@ library FrameTxLib {
     uint8 internal constant TX_PARAM_FRAME_COUNT = 0x09;
     uint8 internal constant TX_PARAM_FRAME_INDEX = 0x0a;
     uint8 internal constant TX_PARAM_SIGNATURE_COUNT = 0x0b;
+    uint8 internal constant TX_PARAM_NONCE_KEY_0 = 0x0c;
+    uint8 internal constant TX_PARAM_LEGACY_NONCE = 0x0d;
+    uint8 internal constant TX_PARAM_NONCE_KEY_COUNT = 0x0e;
+    uint8 internal constant TX_PARAM_NONCE_KEYS_HASH = 0x0f;
 
     // FRAMEPARAM selectors.
     uint8 internal constant FRAME_PARAM_TARGET = 0x00;
@@ -108,7 +113,27 @@ library FrameTxLib {
     }
 
     function nonce() internal pure returns (uint256) {
+        return nonceSeq();
+    }
+
+    function nonceSeq() internal pure returns (uint256) {
         return uint256(txParam(TX_PARAM_NONCE));
+    }
+
+    function nonceKey0() internal pure returns (uint256) {
+        return uint256(txParam(TX_PARAM_NONCE_KEY_0));
+    }
+
+    function legacyNonce() internal pure returns (uint256) {
+        return uint256(txParam(TX_PARAM_LEGACY_NONCE));
+    }
+
+    function nonceKeyCount() internal pure returns (uint256) {
+        return uint256(txParam(TX_PARAM_NONCE_KEY_COUNT));
+    }
+
+    function nonceKeysHash() internal pure returns (bytes32) {
+        return txParam(TX_PARAM_NONCE_KEYS_HASH);
     }
 
     function frameCount() internal pure returns (uint256) {

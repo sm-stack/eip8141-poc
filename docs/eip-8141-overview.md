@@ -9,7 +9,8 @@ The typed payload is:
 ```text
 0x06 || rlp([
   chain_id,
-  nonce,
+  nonce_keys,
+  nonce_seq,
   sender,
   frames,
   signatures,
@@ -32,7 +33,7 @@ Each transaction signature has four fields:
 [scheme, signer, msg, signature]
 ```
 
-Canonical RLP integer rules apply. Zero is encoded as an empty byte string. The maximum frame count is 64.
+Canonical RLP integer rules apply. Zero is encoded as an empty byte string. The maximum frame count is 64. EIP-8250 replaces the scalar nonce with one to sixteen strictly increasing nonce keys and a shared sequence. Key zero is valid only as singleton `[0]` and aliases the sender account nonce. See [eip-8250-keyed-nonces.md](eip-8250-keyed-nonces.md).
 
 ## Frame Modes And Flags
 
@@ -75,6 +76,8 @@ The signature hash is `keccak256(typed_transaction)`, with only the raw signatur
 | `0xAA` | APPROVE | Terminate VERIFY execution and approve a scope |
 
 FRAMEPARAM status is available only for earlier frames and returns `0` for failed or skipped execution and `1` for success. Receipts retain the distinct skipped status described below.
+
+`TXPARAM(0x01)` returns `nonce_seq`; `0x0C` through `0x0F` expose the first nonce key, pre-state legacy nonce, key count, and key-set hash.
 
 ## Gas Accounting
 

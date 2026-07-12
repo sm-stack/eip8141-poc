@@ -4,9 +4,9 @@ This document describes the implemented changes in `8141-geth`.
 
 ## Transaction Model
 
-`core/types/tx_frame.go` defines transaction type `0x06` with nine RLP fields. Frames contain `mode`, `flags`, `target`, `gas_limit`, `value`, and `data`. Transaction-level signatures contain `scheme`, `signer`, `msg`, and raw signature bytes.
+`core/types/tx_frame.go` defines transaction type `0x06` with ten RLP fields. `nonce_keys` and `nonce_seq` replace the scalar nonce. Frames contain `mode`, `flags`, `target`, `gas_limit`, `value`, and `data`. Transaction-level signatures contain `scheme`, `signer`, `msg`, and raw signature bytes.
 
-Decoding performs strict field-count, canonical RLP, frame-count, mode, flags, value, atomic-batch, expiry, and signature validation. Legacy eight-field transactions and four-field frames are rejected.
+Decoding performs strict field-count, canonical RLP, nonce-key ordering, frame-count, mode, flags, value, atomic-batch, expiry, and signature validation. Legacy nine-field frame transactions and four-field frames are rejected.
 
 The transaction hash includes the complete payload. The signature hash copies the transaction and clears raw signature bytes only where `msg` is empty.
 
@@ -58,7 +58,7 @@ The EIP-7623 floor equals the full intrinsic metadata gas. Overflow clamps or re
 The dedicated framepool performs:
 
 1. static transaction and signature validation;
-2. sender nonce and replacement fee-bump validation;
+2. keyed nonce state and same-domain replacement fee-bump validation;
 3. validation-prefix recognition, skipping the canonical expiry frame;
 4. expiry deadline checking and rechecking;
 5. validation-prefix gas budgeting;
@@ -69,9 +69,11 @@ The canonical paymaster is recognized by runtime hash. Its pay frame is exempt f
 
 Reset and reorg handling rebuild reservations by revalidating retained transactions against the new state.
 
+Payment APPROVE consumes the selected nonce domain. Singleton key zero increments the account nonce. Non-zero keys update protocol-managed storage at `0x0000000000000000000000000000000000008250`; each first-used key costs 20,000 gas. Approval effects survive later frame and atomic-batch rollback.
+
 ## RPC And Receipts
 
-Frame transaction JSON includes frame flags/value and the complete signatures list. Raw transaction submission follows the same strict decoder as block transactions.
+Frame transaction JSON includes `nonceKeys`, `nonceSeq`, frame flags/value, and the complete signatures list. Raw transaction submission follows the same strict decoder as block transactions.
 
 Frame receipts include:
 
@@ -84,4 +86,4 @@ Status values are normalized to failed `0`, successful `1`, or skipped `3`. Tran
 
 ## Genesis
 
-Developer genesis installs the expiry verifier at `0x0000000000000000000000000000000000008141` with nonce 1 and the canonical runtime from `params.FrameExpiryVerifierCode`.
+Developer genesis installs the expiry verifier at `0x0000000000000000000000000000000000008141` and NONCE_MANAGER at `0x0000000000000000000000000000000000008250`, each with nonce 1 and its canonical runtime. NONCE_MANAGER always reverts direct calls; only protocol bookkeeping writes its storage.

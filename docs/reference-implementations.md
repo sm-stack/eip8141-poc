@@ -15,6 +15,12 @@ All contracts are research code and require the custom EIP-8141 Solidity compile
 
 Scope constants are bitmasks: payment `1`, execution `2`, and both `3`. The library includes typed helpers for frame flags/value/status, signature metadata, the canonical signature hash, and expiry deadline encoding.
 
+EIP-8250 helpers expose `nonceSeq()`, `nonceKey0()`, `legacyNonce()`, `nonceKeyCount()`, and `nonceKeysHash()` through TXPARAM selectors `0x01` and `0x0C` through `0x0F`.
+
+## NullifierValidator
+
+`contracts/src/example/NullifierValidator.sol` demonstrates a single-use non-zero key domain. It requires sequence zero and binds validation to an expected key count and `keccak256(bytes32(count) || bytes32(k0) || ...)` hash before approving the frame's allowed scope.
+
 ## Simple8141Account
 
 `contracts/src/Simple8141Account.sol` demonstrates protocol-verified transaction signatures.
@@ -98,7 +104,8 @@ VERIFY frames use the allowed-scope bitmask. Hook pre/post checks execute inside
 
 `viem-eip8141/src/eip8141/` provides:
 
-- strict nine-field transaction and six-field frame serialization/parsing;
+- strict ten-field transaction and six-field frame serialization/parsing;
+- EIP-8250 keyed nonce lookup and automatic sequence preparation, with scalar `nonce` input promoted to `[0]`;
 - geth-compatible signature hashing;
 - LocalAccount, EOA, P256, and Simple8141Account adapters;
 - official frame transaction gas calculation;

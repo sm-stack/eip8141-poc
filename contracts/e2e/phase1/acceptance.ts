@@ -227,7 +227,8 @@ async function main() {
 
   const vector: TransactionSerializableFrame = {
     chainId: 1,
-    nonce: 7,
+    nonceKeys: [0n],
+    nonceSeq: 7n,
     sender: "0x1111111111111111111111111111111111111111",
     frames: [
       { mode: "verify", flags: 3, target: null, gasLimit: 50_000n, value: 0n, data: "0xaabb" },
@@ -244,7 +245,7 @@ async function main() {
     blobVersionedHashes: ["0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"],
     type: "frame",
   };
-  if (computeSigHash(vector) !== "0x8a6995cd49dc64c051cfed96ff9809e2ecfae14413127a51f76f43347da894b3") {
+  if (computeSigHash(vector) !== "0x0b5ac8a9045a91da5db381e495a28164a69ca61b07098a5aabd630a891b4d93a") {
     throw new Error("geth/viem sig-hash vector mismatch");
   }
   console.log("PASS geth/viem shared sig-hash vector");

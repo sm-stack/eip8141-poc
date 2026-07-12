@@ -13,7 +13,7 @@ contract FrameTxLibHarness {
         return (FrameTxLib.FRAME_FLAG_SCOPE_MASK, FrameTxLib.FRAME_FLAG_ATOMIC_BATCH);
     }
 
-    function txParamSelectors() external pure returns (uint8[12] memory selectors) {
+    function txParamSelectors() external pure returns (uint8[16] memory selectors) {
         selectors = [
             FrameTxLib.TX_PARAM_TYPE,
             FrameTxLib.TX_PARAM_NONCE,
@@ -26,7 +26,11 @@ contract FrameTxLibHarness {
             FrameTxLib.TX_PARAM_SIG_HASH,
             FrameTxLib.TX_PARAM_FRAME_COUNT,
             FrameTxLib.TX_PARAM_FRAME_INDEX,
-            FrameTxLib.TX_PARAM_SIGNATURE_COUNT
+            FrameTxLib.TX_PARAM_SIGNATURE_COUNT,
+            FrameTxLib.TX_PARAM_NONCE_KEY_0,
+            FrameTxLib.TX_PARAM_LEGACY_NONCE,
+            FrameTxLib.TX_PARAM_NONCE_KEY_COUNT,
+            FrameTxLib.TX_PARAM_NONCE_KEYS_HASH
         ];
     }
 
@@ -84,7 +88,7 @@ contract FrameTxLibTest is Test {
     }
 
     function test_txParamSelectorsAreContiguous() public {
-        uint8[12] memory selectors = harness.txParamSelectors();
+        uint8[16] memory selectors = harness.txParamSelectors();
         for (uint8 i; i < selectors.length; ++i) {
             assertEq(selectors[i], i);
         }
@@ -110,5 +114,9 @@ contract FrameTxLibTest is Test {
         bytes memory encoded = harness.encodeExpiryDeadline(0x0102030405060708);
         assertEq(encoded.length, 8);
         assertEq(encoded, hex"0102030405060708");
+    }
+
+    function test_nonceManagerAddress() public {
+        assertEq(FrameTxLib.NONCE_MANAGER, 0x0000000000000000000000000000000000008250);
     }
 }
