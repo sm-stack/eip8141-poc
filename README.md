@@ -9,7 +9,7 @@ A reference implementation for [EIP-8141](https://github.com/ethereum/EIPs/pull/
 
 ```
 ├── 8141-geth/             # Modified go-ethereum with frame transaction support
-├── solidity-eip8141/      # Modified solc with APPROVE, TXPARAM, FRAMEPARAM, and SIGPARAM
+├── solidity-eip8141/      # Modified solc with EIP-8141/8272 introspection opcodes
 ├── viem-eip8141/          # Modified viem with frame transaction client support
 ├── contracts/             # Solidity smart contracts (Foundry)
 │   ├── src/

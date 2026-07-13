@@ -17,7 +17,8 @@ The typed payload is:
   max_priority_fee_per_gas,
   max_fee_per_gas,
   max_fee_per_blob_gas,
-  blob_versioned_hashes
+  blob_versioned_hashes,
+  recent_root_references
 ])
 ```
 
@@ -34,6 +35,8 @@ Each transaction signature has four fields:
 ```
 
 Canonical RLP integer rules apply. Zero is encoded as an empty byte string. The maximum frame count is 64. EIP-8250 replaces the scalar nonce with one to sixteen strictly increasing nonce keys and a shared sequence. Key zero is valid only as singleton `[0]` and aliases the sender account nonce. See [eip-8250-keyed-nonces.md](eip-8250-keyed-nonces.md).
+
+EIP-8272 appends up to 16 `[source_id, slot, root]` references. Both hashes are exactly 32 bytes and `slot` is a canonical uint64. References are signed and checked against transaction pre-state. See [eip-8272-recent-roots.md](eip-8272-recent-roots.md).
 
 ## Frame Modes And Flags
 
@@ -73,11 +76,12 @@ The signature hash is `keccak256(typed_transaction)`, with only the raw signatur
 | `0xB2` | FRAMEDATACOPY | Copy bytes from a frame's data |
 | `0xB3` | FRAMEPARAM | Read frame metadata and earlier status |
 | `0xB4` | SIGPARAM | Read signature signer, scheme, message, or length |
+| `0xB5` | RECENTROOTREFLOAD | Read source ID, slot, or root from a verified reference |
 | `0xAA` | APPROVE | Terminate VERIFY execution and approve a scope |
 
 FRAMEPARAM status is available only for earlier frames and returns `0` for failed or skipped execution and `1` for success. Receipts retain the distinct skipped status described below.
 
-`TXPARAM(0x01)` returns `nonce_seq`; `0x0C` through `0x0F` expose the first nonce key, pre-state legacy nonce, key count, and key-set hash.
+`TXPARAM(0x01)` returns `nonce_seq`; `0x0C` through `0x0F` expose the first nonce key, pre-state legacy nonce, key count, and key-set hash. `TXPARAM(0x10)` returns the recent-root reference count.
 
 ## Gas Accounting
 
@@ -87,8 +91,10 @@ total_gas =
   + 475 * len(frames)
   + calldata7623(rlp(frames))
   + calldata7623(rlp(signatures))
+  + calldata7623(rlp(recent_root_references))
   + 2,800 * secp256k1_signature_count
   + 6,700 * p256_signature_count
+  + (references > 0 ? 2,400 + 2,002 * references : 0)
   + sum(frame.gas_limit)
 ```
 

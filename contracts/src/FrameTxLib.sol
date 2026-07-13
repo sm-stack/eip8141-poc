@@ -16,6 +16,7 @@ library FrameTxLib {
 
     address internal constant EXPIRY_VERIFIER = 0x0000000000000000000000000000000000008141;
     address internal constant NONCE_MANAGER = 0x0000000000000000000000000000000000008250;
+    address internal constant RECENT_ROOT = 0x0000000000000000000000000000000000008272;
 
     // TXPARAM selectors.
     uint8 internal constant TX_PARAM_TYPE = 0x00;
@@ -34,6 +35,11 @@ library FrameTxLib {
     uint8 internal constant TX_PARAM_LEGACY_NONCE = 0x0d;
     uint8 internal constant TX_PARAM_NONCE_KEY_COUNT = 0x0e;
     uint8 internal constant TX_PARAM_NONCE_KEYS_HASH = 0x0f;
+    uint8 internal constant TX_PARAM_RECENT_ROOT_REF_COUNT = 0x10;
+
+    uint8 internal constant RECENT_ROOT_FIELD_SOURCE_ID = 0x00;
+    uint8 internal constant RECENT_ROOT_FIELD_SLOT = 0x01;
+    uint8 internal constant RECENT_ROOT_FIELD_ROOT = 0x02;
 
     // FRAMEPARAM selectors.
     uint8 internal constant FRAME_PARAM_TARGET = 0x00;
@@ -104,6 +110,13 @@ library FrameTxLib {
         }
     }
 
+    /// @notice Read a field from an EIP-8272 recent-root reference.
+    function recentRootRefLoad(uint256 field, uint256 referenceIndex) internal pure returns (bytes32 result) {
+        assembly {
+            result := recentrootrefload(field, referenceIndex)
+        }
+    }
+
     function sigHash() internal pure returns (bytes32) {
         return txParam(TX_PARAM_SIG_HASH);
     }
@@ -134,6 +147,10 @@ library FrameTxLib {
 
     function nonceKeysHash() internal pure returns (bytes32) {
         return txParam(TX_PARAM_NONCE_KEYS_HASH);
+    }
+
+    function recentRootReferenceCount() internal pure returns (uint256) {
+        return uint256(txParam(TX_PARAM_RECENT_ROOT_REF_COUNT));
     }
 
     function frameCount() internal pure returns (uint256) {

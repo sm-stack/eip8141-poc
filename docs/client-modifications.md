@@ -4,9 +4,9 @@ This document describes the implemented changes in `8141-geth`.
 
 ## Transaction Model
 
-`core/types/tx_frame.go` defines transaction type `0x06` with ten RLP fields. `nonce_keys` and `nonce_seq` replace the scalar nonce. Frames contain `mode`, `flags`, `target`, `gas_limit`, `value`, and `data`. Transaction-level signatures contain `scheme`, `signer`, `msg`, and raw signature bytes.
+`core/types/tx_frame.go` defines transaction type `0x06` with eleven RLP fields. `nonce_keys` and `nonce_seq` replace the scalar nonce. Frames contain `mode`, `flags`, `target`, `gas_limit`, `value`, and `data`. Transaction-level signatures contain `scheme`, `signer`, `msg`, and raw signature bytes. The final field contains EIP-8272 recent-root references.
 
-Decoding performs strict field-count, canonical RLP, nonce-key ordering, frame-count, mode, flags, value, atomic-batch, expiry, and signature validation. Legacy nine-field frame transactions and four-field frames are rejected.
+Decoding performs strict field-count, canonical RLP, nonce-key ordering, frame-count, mode, flags, value, atomic-batch, expiry, signature, and recent-root validation. Legacy frame transaction schemas and four-field frames are rejected.
 
 The transaction hash includes the complete payload. The signature hash copies the transaction and clears raw signature bytes only where `msg` is empty.
 
@@ -36,9 +36,10 @@ Osaka registers the following opcodes:
 | `0xB2` | FRAMEDATACOPY | copy plus memory expansion |
 | `0xB3` | FRAMEPARAM | base |
 | `0xB4` | SIGPARAM | base |
+| `0xB5` | RECENTROOTREFLOAD | very low |
 | `0xAA` | APPROVE | terminating |
 
-Removed opcodes `TXPARAMLOAD`, `TXPARAMSIZE`, and `TXPARAMCOPY` are not accepted. The Solidity fork exposes `txparam`, `framedataload`, `framedatacopy`, `frameparam`, `sigparam`, and `approve` as Yul builtins.
+Removed opcodes `TXPARAMLOAD`, `TXPARAMSIZE`, and `TXPARAMCOPY` are not accepted. The Solidity fork exposes `txparam`, `framedataload`, `framedatacopy`, `frameparam`, `sigparam`, `recentrootrefload`, and `approve` as Yul builtins.
 
 ## Gas
 
@@ -46,8 +47,9 @@ Removed opcodes `TXPARAMLOAD`, `TXPARAMSIZE`, and `TXPARAMCOPY` are not accepted
 
 ```text
 15,000 + 475/frame
-+ EIP-7623 cost of RLP frames and signatures
++ EIP-7623 cost of RLP frames, signatures, and recent-root references
 + signature verification gas
++ 2,400 + 2,002/reference when references are present
 + sum(frame gas limits)
 ```
 
@@ -69,11 +71,13 @@ The canonical paymaster is recognized by runtime hash. Its pay frame is exempt f
 
 Reset and reorg handling rebuild reservations by revalidating retained transactions against the new state.
 
+Recent-root references are checked against the transaction pre-state immediately after keyed nonces. Same-slot, future, expired, and mismatched entries are rejected. Framepool reset rechecks every retained reference and evicts entries once `current_slot - slot >= 8192`.
+
 Payment APPROVE consumes the selected nonce domain. Singleton key zero increments the account nonce. Non-zero keys update protocol-managed storage at `0x0000000000000000000000000000000000008250`; each first-used key costs 20,000 gas. Approval effects survive later frame and atomic-batch rollback.
 
 ## RPC And Receipts
 
-Frame transaction JSON includes `nonceKeys`, `nonceSeq`, frame flags/value, and the complete signatures list. Raw transaction submission follows the same strict decoder as block transactions.
+Frame transaction JSON includes `nonceKeys`, `nonceSeq`, frame flags/value, the complete signatures list, and `recentRootReferences`. Raw transaction submission follows the same strict decoder as block transactions.
 
 Frame receipts include:
 
@@ -86,4 +90,4 @@ Status values are normalized to failed `0`, successful `1`, or skipped `3`. Tran
 
 ## Genesis
 
-Developer genesis installs the expiry verifier at `0x0000000000000000000000000000000000008141` and NONCE_MANAGER at `0x0000000000000000000000000000000000008250`, each with nonce 1 and its canonical runtime. NONCE_MANAGER always reverts direct calls; only protocol bookkeeping writes its storage.
+Developer genesis installs the expiry verifier at `0x0000000000000000000000000000000000008141`, NONCE_MANAGER at `0x0000000000000000000000000000000000008250`, and RECENT_ROOT at `0x0000000000000000000000000000000000008272`. The recent-root address accepts exactly `salt || root` with zero value and records the current slot's entry.

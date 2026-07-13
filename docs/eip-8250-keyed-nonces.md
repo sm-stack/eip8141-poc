@@ -13,7 +13,8 @@ EIP-8250 extends EIP-8141 frame transactions with independent nonce domains. A t
   max_priority_fee_per_gas,
   max_fee_per_gas,
   max_fee_per_blob_gas,
-  blob_versioned_hashes
+  blob_versioned_hashes,
+  recent_root_references
 ])
 ```
 
@@ -23,7 +24,7 @@ EIP-8250 extends EIP-8141 frame transactions with independent nonce domains. A t
 - Keys are canonical uint256 RLP integers in strictly increasing order.
 - Key zero is valid only as singleton `[0]`.
 - `nonce_seq` is a canonical uint64 and must be below `2^64 - 1` for execution.
-- The old nine-field wire format is invalid.
+- Legacy frame transaction wire formats are invalid. EIP-8272 adds the eleventh field shown above.
 
 Client APIs may accept a scalar `nonce` as an input alias. It is normalized to `nonce_keys=[0]` and `nonce_seq=nonce` before signing and serialization.
 

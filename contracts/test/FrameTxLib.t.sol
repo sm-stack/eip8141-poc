@@ -13,7 +13,7 @@ contract FrameTxLibHarness {
         return (FrameTxLib.FRAME_FLAG_SCOPE_MASK, FrameTxLib.FRAME_FLAG_ATOMIC_BATCH);
     }
 
-    function txParamSelectors() external pure returns (uint8[16] memory selectors) {
+    function txParamSelectors() external pure returns (uint8[17] memory selectors) {
         selectors = [
             FrameTxLib.TX_PARAM_TYPE,
             FrameTxLib.TX_PARAM_NONCE,
@@ -30,7 +30,8 @@ contract FrameTxLibHarness {
             FrameTxLib.TX_PARAM_NONCE_KEY_0,
             FrameTxLib.TX_PARAM_LEGACY_NONCE,
             FrameTxLib.TX_PARAM_NONCE_KEY_COUNT,
-            FrameTxLib.TX_PARAM_NONCE_KEYS_HASH
+            FrameTxLib.TX_PARAM_NONCE_KEYS_HASH,
+            FrameTxLib.TX_PARAM_RECENT_ROOT_REF_COUNT
         ];
     }
 
@@ -88,7 +89,7 @@ contract FrameTxLibTest is Test {
     }
 
     function test_txParamSelectorsAreContiguous() public {
-        uint8[16] memory selectors = harness.txParamSelectors();
+        uint8[17] memory selectors = harness.txParamSelectors();
         for (uint8 i; i < selectors.length; ++i) {
             assertEq(selectors[i], i);
         }
@@ -118,5 +119,12 @@ contract FrameTxLibTest is Test {
 
     function test_nonceManagerAddress() public {
         assertEq(FrameTxLib.NONCE_MANAGER, 0x0000000000000000000000000000000000008250);
+    }
+
+    function test_recentRootConstants() public {
+        assertEq(FrameTxLib.RECENT_ROOT, 0x0000000000000000000000000000000000008272);
+        assertEq(FrameTxLib.RECENT_ROOT_FIELD_SOURCE_ID, 0);
+        assertEq(FrameTxLib.RECENT_ROOT_FIELD_SLOT, 1);
+        assertEq(FrameTxLib.RECENT_ROOT_FIELD_ROOT, 2);
     }
 }
