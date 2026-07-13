@@ -1,11 +1,11 @@
-.PHONY: build build-geth build-solc build-viem submodules install-deps \
+.PHONY: build build-geth build-solc build-viem submodules install-deps vectors-check \
        clean clean-geth clean-solc clean-viem \
        contracts test devnet devnet-stop \
        e2e e2e-simple e2e-kernel e2e-kernel-validator e2e-hooked \
        e2e-coinbase-ecdsa e2e-coinbase-webauthn e2e-light-account \
        e2e-negative-mempool e2e-negative-protocol e2e-negative \
        e2e-mldsa e2e-eoa e2e-eoa-batching e2e-eoa-sponsor e2e-eoa-p256 \
-       e2e-phase1 e2e-phase2 e2e-phase3 benchmark
+       e2e-phase1 e2e-phase2 e2e-phase3 e2e-phases benchmark
 
 BUILD_DIR := $(CURDIR)/build
 GETH_BIN := $(BUILD_DIR)/bin/geth
@@ -23,6 +23,9 @@ submodules:
 install-deps:
 	cd viem-eip8141 && pnpm install --frozen-lockfile
 	cd contracts && npm ci
+
+vectors-check:
+	bash scripts/sync-test-vectors.sh --check
 
 build-geth:
 	$(MAKE) -C 8141-geth geth
@@ -101,6 +104,9 @@ e2e-phase2:
 
 e2e-phase3:
 	cd contracts && npx tsx e2e/phase3/acceptance.ts
+
+e2e-phases:
+	bash scripts/run-phase-e2e.sh
 
 e2e-negative: e2e-negative-mempool e2e-negative-protocol
 

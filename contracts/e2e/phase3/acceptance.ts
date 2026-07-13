@@ -26,6 +26,7 @@ import {
 import { createTestClients, waitForReceipt } from "../helpers/client.js";
 import { DEAD_ADDR, DEV_KEY } from "../helpers/config.js";
 import { deployContract, loadBytecode } from "../helpers/deploy.js";
+import { loadFrameTransactionVector } from "../helpers/frame-vector.js";
 
 const recentRootAddress = "0x0000000000000000000000000000000000008272" as Address;
 const secondsPerSlot = 12n;
@@ -283,33 +284,11 @@ async function main() {
   }
   console.log("PASS geth/viem intrinsic gas deltas for 0, 1, and 16 references");
 
-  const vector: TransactionSerializableFrame = {
-    chainId: 1,
-    nonceKeys: [0n],
-    nonceSeq: 7n,
-    sender: "0x1111111111111111111111111111111111111111",
-    frames: [
-      { mode: "verify", flags: 3, target: null, gasLimit: 50_000n, value: 0n, data: "0xaabb" },
-      { mode: "sender", flags: 4, target: "0x2222222222222222222222222222222222222222", gasLimit: 70_000n, value: 12_345n, data: "0xccddee" },
-      { mode: "default", flags: 0, target: "0x2222222222222222222222222222222222222222", gasLimit: 30_000n, value: 0n, data: "0x99" },
-    ],
-    signatures: [
-      { scheme: 0, signer: "0x3333333333333333333333333333333333333333", msg: "0x", signature: `0x00${"11".repeat(32)}${"22".repeat(32)}` },
-      { scheme: 1, signer: "0x4444444444444444444444444444444444444444", msg: `0x${"aa".repeat(32)}`, signature: `0x${"bb".repeat(32)}${"cc".repeat(32)}${"dd".repeat(32)}${"ee".repeat(32)}` },
-    ],
-    recentRootReferences: [
-      { sourceId: `0x${"01".repeat(32)}`, slot: 9n, root: `0x${"02".repeat(32)}` },
-    ],
-    maxPriorityFeePerGas: 3n,
-    maxFeePerGas: 100n,
-    maxFeePerBlobGas: 0n,
-    blobVersionedHashes: ["0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"],
-    type: "frame",
-  };
+  const { transaction: vector, sigHash, rawTransaction: expectedVectorRaw } =
+    loadFrameTransactionVector();
   const vectorRaw = serializeFrameTransaction(vector);
-  if (computeSigHash(vector) !== "0xc0aeaa116efe492bd25f0648a49964062170aa3f911dbcdb61cb888945a1bde4")
+  if (computeSigHash(vector) !== sigHash)
     throw new Error("geth/viem EIP-8272 sig-hash vector mismatch");
-  const expectedVectorRaw = "0x06f901ed01c18007941111111111111111111111111111111111111111f84cca01038082c3508082aabbe202049422222222222222222222222222222222222222228301117082303983ccddeedd8080942222222222222222222222222222222222222222827530808199f90117f85a8094333333333333333333333333333333333333333380b8410011111111111111111111111111111111111111111111111111111111111111112222222222222222222222222222222222222222222222222222222222222222f8b901944444444444444444444444444444444444444444a0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab880bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee036480e1a00102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20f845f843a0010101010101010101010101010101010101010101010101010101010101010109a00202020202020202020202020202020202020202020202020202020202020202";
   if (vectorRaw !== expectedVectorRaw) {
     const mismatch = [...vectorRaw].findIndex((character, index) => character !== expectedVectorRaw[index]);
     throw new Error(`geth/viem EIP-8272 raw transaction vector mismatch at ${mismatch}: ${vectorRaw}`);

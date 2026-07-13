@@ -1,0 +1,61 @@
+name: Release closeout
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test-e2e:
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 8141-geth/go.mod
+          cache-dependency-path: 8141-geth/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install build dependencies
+        run: brew install boost
+
+      - name: Install JavaScript dependencies
+        run: make install-deps
+
+      - name: Check generated test vectors
+        run: make vectors-check
+
+      - name: Build all components
+        run: make build-geth build-solc build-viem contracts
+
+      - name: Test geth
+        run: go test ./...
+        working-directory: 8141-geth
+        env:
+          EIP8141_VECTOR_PATH: ${{ github.workspace }}/.context/test-vectors/frame-transaction-v1.json
+
+      - name: Test viem
+        run: pnpm vitest run src/eip8141
+        working-directory: viem-eip8141
+
+      - name: Test contracts
+        run: forge test
+        working-directory: contracts
+
+      - name: Run Phase 1-3 acceptance
+        run: bash scripts/run-phase-e2e.sh

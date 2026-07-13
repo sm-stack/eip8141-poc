@@ -14,7 +14,6 @@
 
 # Lockfiles
 /contracts/bun.lockb
-/contracts/package-lock.json
 
 # Environment
 .env
@@ -23,4 +22,6 @@
 .DS_Store
 
 # Context
-.context/
+.context/*
+!.context/test-vectors/
+!.context/test-vectors/**

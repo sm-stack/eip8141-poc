@@ -104,13 +104,14 @@ VERIFY frames use the allowed-scope bitmask. Hook pre/post checks execute inside
 
 `viem-eip8141/src/eip8141/` provides:
 
-- strict ten-field transaction and six-field frame serialization/parsing;
+- strict eleven-field transaction and six-field frame serialization/parsing;
 - EIP-8250 keyed nonce lookup and automatic sequence preparation, with scalar `nonce` input promoted to `[0]`;
 - geth-compatible signature hashing;
 - LocalAccount, EOA, P256, and Simple8141Account adapters;
 - official frame transaction gas calculation;
 - receipt formatting for status `0/1/3`;
-- expiry and atomic-batch helpers.
+- expiry and atomic-batch helpers;
+- EIP-8272 source ID, root write, and signed recent-root reference helpers.
 
 ## Test Coverage
 

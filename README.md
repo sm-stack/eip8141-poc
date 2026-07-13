@@ -49,10 +49,10 @@ A reference implementation for [EIP-8141](https://github.com/ethereum/EIPs/pull/
 
 ## Prerequisites
 
-- Go 1.21+
+- Go 1.24+
 - CMake 3.13+
 - [Foundry](https://getfoundry.sh)
-- Node.js 18+
+- Node.js 24.5+
 - [pnpm](https://pnpm.io) (for viem-eip8141)
 
 ## Build
@@ -104,7 +104,8 @@ The developer genesis installs the expiry verifier at `0x00000000000000000000000
 E2E tests run against the local devnet. Start the devnet first, then:
 
 ```bash
-make e2e                   # run all 13 E2E test suites
+make e2e                   # run all 20 E2E test suites against the current devnet
+make e2e-phases            # run Phase 1, 2, and 3 on separate fresh devnets
 make benchmark             # gas benchmarks
 ```
 
@@ -141,6 +142,19 @@ make e2e-eoa-p256          # P256 (passkey) signing
 make e2e-negative          # all negative tests
 make e2e-negative-mempool  # mempool tracer violations
 make e2e-negative-protocol # protocol constraint violations
+```
+
+## Shared Test Vector
+
+The canonical 11-field frame transaction fixture is
+`.context/test-vectors/frame-transaction-v1.json`. Geth, viem, and the contracts E2E
+consume this fixture for the shared raw transaction, signature hash, and gas vector.
+The standalone submodule snapshots are generated artifacts. After changing the canonical
+fixture, refresh and verify them with:
+
+```bash
+bash scripts/sync-test-vectors.sh
+make vectors-check
 ```
 
 ## Gas Benchmark
