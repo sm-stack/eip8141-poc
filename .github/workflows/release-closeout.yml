@@ -41,7 +41,9 @@ jobs:
         run: make vectors-check
 
       - name: Build all components
-        run: make build-geth build-solc build-viem contracts
+        run: |
+          env -u GITHUB_ACTIONS make build-geth
+          make build-solc build-viem contracts
 
       - name: Test geth
         run: go test ./...
