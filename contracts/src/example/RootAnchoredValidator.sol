@@ -25,6 +25,8 @@ contract RootAnchoredValidator {
         expectedRoot = root;
     }
 
+    receive() external payable {}
+
     function validate() external view {
         if (msg.sender != ENTRY_POINT) revert InvalidCaller();
         if (FrameTxLib.recentRootReferenceCount() != 1) revert InvalidReferenceCount();

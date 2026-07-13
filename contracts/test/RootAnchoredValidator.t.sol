@@ -19,4 +19,12 @@ contract RootAnchoredValidatorTest is Test {
         vm.expectRevert(RootAnchoredValidator.InvalidCaller.selector);
         validator.validate();
     }
+
+    function test_receiveEtherForPaymentApproval() public {
+        RootAnchoredValidator validator = new RootAnchoredValidator(bytes32(0), 0, bytes32(0));
+        vm.deal(address(this), 1 ether);
+        (bool success,) = address(validator).call{value: 1 ether}("");
+        assertTrue(success);
+        assertEq(address(validator).balance, 1 ether);
+    }
 }

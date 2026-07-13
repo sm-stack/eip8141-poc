@@ -38,6 +38,7 @@ async function buildRaw(
     sender: sender.address,
     frames: txFrames,
     signatures: [placeholder],
+    recentRootReferences: [],
     maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
     maxFeePerGas: fees.maxFeePerGas,
     type: "frame",

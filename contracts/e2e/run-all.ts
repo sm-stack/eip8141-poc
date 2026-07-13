@@ -26,6 +26,7 @@ const suites = [
   { file: "e2e/eoa/eoa-p256.ts", name: "EOA P256" },
   { file: "e2e/phase1/acceptance.ts", name: "Phase 1 Acceptance" },
   { file: "e2e/phase2/acceptance.ts", name: "Phase 2 Acceptance" },
+  { file: "e2e/phase3/acceptance.ts", name: "Phase 3 Acceptance" },
   { file: "e2e/benchmark/gas-benchmark.ts", name: "Gas Benchmark" },
 ];
 

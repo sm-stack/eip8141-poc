@@ -54,7 +54,12 @@ async function signAndSend(
   signers: ReturnType<typeof privateKeyToAccount>[],
 ) {
   const placeholders = signers.map((signer) => makeEoaSignaturePlaceholder(signer.address));
-  const unsigned: TransactionSerializableFrame = { ...base, frames, signatures: placeholders };
+  const unsigned: TransactionSerializableFrame = {
+    ...base,
+    frames,
+    signatures: placeholders,
+    recentRootReferences: [],
+  };
   const sigHash = computeSigHash(unsigned);
   const signatures: TxSignature[] = await Promise.all(
     signers.map((signer) => signEoaTransaction(signer, sigHash)),
@@ -161,7 +166,12 @@ async function main() {
   expiredFrames[0] = makeExpiryFrame(latest.timestamp - 1n, 20_000n);
   const expiredBase = await transactionBase(publicClient, sender.address);
   const expiredPlaceholder = makeEoaSignaturePlaceholder(sender.address);
-  const expiredUnsigned = { ...expiredBase, frames: expiredFrames, signatures: [expiredPlaceholder] };
+  const expiredUnsigned = {
+    ...expiredBase,
+    frames: expiredFrames,
+    signatures: [expiredPlaceholder],
+    recentRootReferences: [],
+  };
   const expiredSig = await signEoaTransaction(sender, computeSigHash(expiredUnsigned));
   await expectRejected(publicClient, serializeFrameTransaction({ ...expiredUnsigned, signatures: [expiredSig] }), "expired deadline rejection");
 
@@ -239,13 +249,16 @@ async function main() {
       { scheme: 0, signer: "0x3333333333333333333333333333333333333333", msg: "0x", signature: `0x00${"11".repeat(32)}${"22".repeat(32)}` },
       { scheme: 1, signer: "0x4444444444444444444444444444444444444444", msg: `0x${"aa".repeat(32)}`, signature: `0x${"bb".repeat(32)}${"cc".repeat(32)}${"dd".repeat(32)}${"ee".repeat(32)}` },
     ],
+    recentRootReferences: [
+      { sourceId: `0x${"01".repeat(32)}`, slot: 9n, root: `0x${"02".repeat(32)}` },
+    ],
     maxPriorityFeePerGas: 3n,
     maxFeePerGas: 100n,
     maxFeePerBlobGas: 0n,
     blobVersionedHashes: ["0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"],
     type: "frame",
   };
-  if (computeSigHash(vector) !== "0x0b5ac8a9045a91da5db381e495a28164a69ca61b07098a5aabd630a891b4d93a") {
+  if (computeSigHash(vector) !== "0xc0aeaa116efe492bd25f0648a49964062170aa3f911dbcdb61cb888945a1bde4") {
     throw new Error("geth/viem sig-hash vector mismatch");
   }
   console.log("PASS geth/viem shared sig-hash vector");

@@ -124,6 +124,7 @@ async function main() {
       maxPriorityFeePerGas: 1_000_000_000n,
       maxFeePerGas: ctx.gasFeeCap,
       signatures: [],
+      recentRootReferences: [],
       frames: [
         { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, data: '0x' },
         { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
@@ -156,6 +157,7 @@ async function main() {
       maxPriorityFeePerGas: 1_000_000_000n,
       maxFeePerGas: ctx.gasFeeCap,
       signatures: [],
+      recentRootReferences: [],
       frames: [
         { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
         { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, data: '0x' },
@@ -188,6 +190,7 @@ async function main() {
       maxPriorityFeePerGas: 1_000_000_000n,
       maxFeePerGas: ctx.gasFeeCap,
       signatures: [],
+      recentRootReferences: [],
       frames: [
         { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
         { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, data: '0x' },
@@ -220,6 +223,7 @@ async function main() {
       maxPriorityFeePerGas: 1_000_000_000n,
       maxFeePerGas: ctx.gasFeeCap,
       signatures: [],
+      recentRootReferences: [],
       frames: [
         { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
         { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
@@ -278,6 +282,7 @@ async function main() {
       maxPriorityFeePerGas: 1_000_000_000n,
       maxFeePerGas: innerGasFeeCap,
       signatures: [],
+      recentRootReferences: [],
       frames: [
         { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
         { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, data: '0x' },
