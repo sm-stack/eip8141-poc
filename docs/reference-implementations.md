@@ -49,7 +49,7 @@ Pinned integration values for compiler `0.8.33-develop.2026.7.11+commit.2bacd4c1
 
 | Item | Value |
 |---|---|
-| Runtime code hash | `0x753d8fb13a049dbfd7771540fce6add0de9fd73fa5ec5a74186942d01b65275e` |
+| Runtime code hash | `0x6c30f5865065de960a498c71c875f58fc0817d3b5c93819def154c652ba80435` |
 | Signer storage slot | `0` |
 | Pending withdrawal amount slot | `1` |
 | Withdrawal availability slot | `2` |
@@ -70,7 +70,7 @@ Frame 0: VERIFY(sender, flags=3), data empty
 Frame 1: SENDER(recipient, value), call data
 ```
 
-Authentication comes from a transaction-level secp256k1 or P256 signature with empty `msg`. The VERIFY frame flags determine the approval scope. With a paymaster, the sender uses execution scope `2` and the paymaster uses payment scope `1`.
+Authentication comes from a transaction-level secp256k1 signature with empty `msg`. P256 signatures require deployed smart-account validation code. The VERIFY frame flags determine the approval scope. With a paymaster, the sender uses execution scope `2` and the paymaster uses payment scope `1`.
 
 ## Expiry Verifier
 
@@ -107,9 +107,9 @@ VERIFY frames use the allowed-scope bitmask. Hook pre/post checks execute inside
 - strict eleven-field transaction and six-field frame serialization/parsing;
 - EIP-8250 keyed nonce lookup and automatic sequence preparation, with scalar `nonce` input promoted to `[0]`;
 - geth-compatible signature hashing;
-- LocalAccount, EOA, P256, and Simple8141Account adapters;
+- LocalAccount, secp256k1 EOA, and Simple8141Account adapters; P256 is available to deployed smart-account validators, not protocol default code;
 - official frame transaction gas calculation;
-- receipt formatting for status `0/1/3`;
+- receipt formatting for status `0/1/2`;
 - expiry and atomic-batch helpers;
 - EIP-8272 source ID, root write, and signed recent-root reference helpers.
 

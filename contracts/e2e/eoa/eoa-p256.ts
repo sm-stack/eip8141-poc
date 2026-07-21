@@ -1,25 +1,25 @@
 /**
- * E2E: EOA P256 — passkey-style signing via EIP-8141 default code
+ * E2E: EOA P256 default-code rejection
  *
- * Uses P256 (secp256r1) signature type in the default code.
- * The EOA address is derived as keccak256(qx || qy)[12:].
- *
- * Frame layout:
- *   Frame 0: VERIFY(sender, flags=3) -> P256 tx signature -> APPROVE(both)
- *   Frame 1: SENDER(sender) -> ETH transfer
+ * Protocol-level P256 signatures remain valid for smart accounts, but the
+ * EIP-8141 default code recognizes only SECP256K1. An empty-code P256-derived
+ * sender must therefore be rejected during validation-prefix simulation.
  *
  * Usage: cd contracts && npx tsx e2e/eoa/eoa-p256.ts
  */
 
 import { formatEther, keccak256, concatHex, type Hex, type Address } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { toEoaFrameAccount } from "viem/eip8141";
+import {
+  computeSigHash,
+  serializeFrameTransaction,
+  type TransactionSerializableFrame,
+} from "viem/eip8141";
 import { p256 } from "@noble/curves/p256";
-import { DEV_KEY, DEAD_ADDR } from "../helpers/config.js";
-import { createTestClients, waitForReceipt, fundAccount } from "../helpers/client.js";
+import { DEAD_ADDR } from "../helpers/config.js";
+import { createTestClients, fundAccount } from "../helpers/client.js";
 import {
   banner, sectionHeader, info, step, success,
-  testHeader, testPassed, summary, fatal, printReceipt,
+  testHeader, testPassed, summary, fatal,
 } from "../helpers/log.js";
 
 // ── P256 key helpers ─────────────────────────────────────────────────
@@ -55,7 +55,7 @@ async function main() {
   const { publicClient, walletClient, devAddr } = createTestClients();
 
   const balance = await publicClient.getBalance({ address: devAddr });
-  banner("EOA P256 E2E (Default Code, Passkey)");
+  banner("EOA P256 Default-Code Rejection");
   info(`Dev account: ${devAddr}`);
   info(`Balance: ${formatEther(balance)} ETH`);
 
@@ -70,76 +70,48 @@ async function main() {
   sectionHeader("Fund P256 EOA");
   await fundAccount(walletClient, publicClient, p256Addr);
 
-  // ── 3. Send frame tx with P256 signature ──
-  testHeader(1, "P256 Verify + Execute (ETH transfer)");
+  // ── 3. Submit an otherwise-valid P256 frame transaction ──
+  testHeader(1, "P256 Empty-Code Sender Rejection");
+  const fees = await publicClient.estimateFeesPerGas();
+  const placeholder = {
+    scheme: 2 as const,
+    signer: p256Addr,
+    msg: "0x" as Hex,
+    signature: `0x${"00".repeat(128)}` as Hex,
+  };
+  const unsigned: TransactionSerializableFrame = {
+    chainId: 1337,
+    nonce: 0,
+    sender: p256Addr,
+    frames: [
+      { mode: "verify", flags: 3, target: null, gasLimit: 90_000n, value: 0n, data: "0x" },
+      { mode: "sender", flags: 0, target: DEAD_ADDR, gasLimit: 30_000n, value: 1n, data: "0x" },
+    ],
+    signatures: [placeholder],
+    recentRootReferences: [],
+    maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+    maxFeePerGas: fees.maxFeePerGas,
+    type: "frame",
+  };
+  const { r, s } = await p256Sign(computeSigHash(unsigned), privKey);
+  const signed = {
+    ...unsigned,
+    signatures: [{ ...placeholder, signature: concatHex([r, s, publicKey.x, publicKey.y]) }],
+  };
 
-  const account = toEoaFrameAccount({
-    signatureType: "p256",
-    sign: (hash: Hex) => p256Sign(hash, privKey),
-    publicKey,
-    verifyGasLimit: 90_000n,
-    senderGasLimit: 100_000n,
-    scope: 3,
-  });
-
-  // Verify derived address matches
-  if (account.address.toLowerCase() !== p256Addr.toLowerCase()) {
-    throw new Error(
-      `Address mismatch: account=${account.address}, expected=${p256Addr}`
-    );
+  step("Submitting P256 signature against the SECP256K1-only default code...");
+  try {
+    await publicClient.request({
+      method: "eth_sendRawTransaction",
+      params: [serializeFrameTransaction(signed)],
+    });
+  } catch {
+    success("P256 empty-code sender rejected");
+    testPassed("EOA P256 default-code rejection");
+    summary("EOA P256 Default-Code Rejection", 1);
+    return;
   }
-  success(`Address derived correctly: ${account.address}`);
-
-  const targetBalance = await publicClient.getBalance({ address: DEAD_ADDR });
-
-  step("Sending 2-frame tx: VERIFY(P256) → SENDER(transfer)...");
-  const txHash = await publicClient.sendFrameTransaction({
-    account,
-    calls: [{ to: DEAD_ADDR, value: 1n }],
-  });
-
-  const receipt = await waitForReceipt(publicClient, txHash);
-  printReceipt(receipt);
-
-  // Verify receipt
-  if (receipt.status !== "0x1") {
-    throw new Error(`TX failed: status=${receipt.status}`);
-  }
-  success("Transaction succeeded");
-
-  // Verify frame count: VERIFY + SENDER = 2
-  if (!receipt.frameReceipts || receipt.frameReceipts.length !== 2) {
-    throw new Error(
-      `Frame count: got ${receipt.frameReceipts?.length ?? 0}, want 2`
-    );
-  }
-  success("2 frame receipts present");
-
-  // Frame 0: VERIFY succeeds after approving both scopes.
-  const frame0Status = receipt.frameReceipts[0].status;
-  if (frame0Status !== "0x1") {
-    throw new Error(`Frame 0 (VERIFY): got ${frame0Status}, want 0x1`);
-  }
-  success("Frame 0: VERIFY SUCCESS (0x1)");
-
-  // Frame 1: SENDER → SUCCESS (0x1)
-  const frame1Status = receipt.frameReceipts[1].status;
-  if (frame1Status !== "0x1") {
-    throw new Error(`Frame 1 (SENDER): got ${frame1Status}, want 0x1`);
-  }
-  success("Frame 1: SENDER SUCCESS (0x1)");
-
-  // Verify ETH was transferred
-  const newTargetBalance = await publicClient.getBalance({ address: DEAD_ADDR });
-  if (newTargetBalance - targetBalance !== 1n) {
-    throw new Error(
-      `Balance delta: got ${newTargetBalance - targetBalance}, want 1`
-    );
-  }
-  success("1 wei transferred to DEAD_ADDR");
-
-  testPassed("EOA P256");
-  summary("EOA P256", 1);
+  throw new Error("P256 empty-code sender was unexpectedly accepted");
 }
 
 main().catch((err) => {

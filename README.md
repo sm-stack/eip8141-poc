@@ -97,14 +97,14 @@ make devnet        # starts geth --dev on port 18545
 make devnet-stop   # stops the dev node
 ```
 
-The developer genesis installs the expiry verifier at `0x0000000000000000000000000000000000008141`. Canonical paymaster instances are deployed as needed; their pinned runtime code hash is `0x753d8fb13a049dbfd7771540fce6add0de9fd73fa5ec5a74186942d01b65275e`.
+The developer genesis installs the expiry verifier at `0x0000000000000000000000000000000000008141`. Canonical paymaster instances are deployed as needed; their pinned runtime code hash is `0x6c30f5865065de960a498c71c875f58fc0817d3b5c93819def154c652ba80435`.
 
 ## E2E Tests
 
 E2E tests run against the local devnet. Start the devnet first, then:
 
 ```bash
-make e2e                   # run all 20 E2E test suites against the current devnet
+make e2e                   # run all 21 E2E test suites against the current devnet
 make e2e-phases            # run Phase 1, 2, and 3 on separate fresh devnets
 make benchmark             # gas benchmarks
 ```

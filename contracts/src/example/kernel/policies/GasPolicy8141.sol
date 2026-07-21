@@ -15,7 +15,8 @@ import {MODULE_TYPE_POLICY} from "../types/Constants8141.sol";
 ///      TXPARAM(0x06), which is available in both VERIFY and SENDER frames.
 ///
 ///      ERC-7562 compliance:
-///        - checkFrameTxPolicy reads budgets[msg.sender][id] — sender-associated storage (STO-021)
+///        - checkFrameTxPolicy reads module storage and therefore requires a private
+///          pool under the latest EIP-8141 sender-only storage policy.
 ///        - FrameTxLib.maxCost() uses TXPARAM — not a banned opcode
 contract GasPolicy8141 is IPolicy8141 {
     struct GasBudget {

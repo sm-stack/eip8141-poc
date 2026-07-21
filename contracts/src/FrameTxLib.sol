@@ -56,10 +56,12 @@ library FrameTxLib {
     uint8 internal constant SIG_PARAM_SIGNER = 0x00;
     uint8 internal constant SIG_PARAM_SCHEME = 0x01;
     uint8 internal constant SIG_PARAM_MSG = 0x02;
-    uint8 internal constant SIG_PARAM_SIGNATURE_LENGTH = 0x03;
+	uint8 internal constant SIG_PARAM_SIGNATURE_LENGTH = 0x03;
+	uint8 internal constant SIG_PARAM_SIGNATURE = 0x04;
 
-    uint8 internal constant SIGNATURE_SCHEME_SECP256K1 = 0x00;
-    uint8 internal constant SIGNATURE_SCHEME_P256 = 0x01;
+	uint8 internal constant SIGNATURE_SCHEME_ARBITRARY = 0x00;
+	uint8 internal constant SIGNATURE_SCHEME_SECP256K1 = 0x01;
+	uint8 internal constant SIGNATURE_SCHEME_P256 = 0x02;
 
     /// @notice APPROVE with return data from memory.
     function approveWithData(bytes memory data, uint8 scope) internal pure {

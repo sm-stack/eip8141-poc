@@ -58,14 +58,15 @@ APPROVE is rejected if its scope contains bits not allowed by the current frame 
 
 ## Transaction Signatures
 
-Supported schemes are secp256k1 (`0`) and P256 (`1`). The protocol validates every signature before frame execution.
+Supported schemes are ARBITRARY (`0`), secp256k1 (`1`), and P256 (`2`). The protocol validates protocol schemes and structurally checks ARBITRARY entries before frame execution.
 
 - secp256k1 signature bytes are `v || r || s`, where `v` is raw parity `0` or `1`.
 - P256 signature bytes are `r || s || qx || qy`.
+- ARBITRARY entries have no signer and carry witness bytes for contract validation.
 - Empty `msg` means the signature verifies the canonical transaction signature hash.
 - A non-empty `msg` must be exactly 32 bytes and cannot be all zero.
 
-The signature hash is `keccak256(typed_transaction)`, with only the raw signature bytes of empty-message signatures replaced by empty bytes. Frame data is not elided. `SIGPARAM` exposes signature metadata but never raw signature bytes.
+The signature hash is `keccak256(typed_transaction)`, with only the raw signature bytes of empty-message signatures replaced by empty bytes. Frame data is not elided. `SIGPARAM` exposes protocol-signature metadata and can copy raw bytes only from ARBITRARY entries.
 
 ## Introspection Opcodes
 
@@ -79,7 +80,7 @@ The signature hash is `keccak256(typed_transaction)`, with only the raw signatur
 | `0xB5` | RECENTROOTREFLOAD | Read source ID, slot, or root from a verified reference |
 | `0xAA` | APPROVE | Terminate VERIFY execution and approve a scope |
 
-FRAMEPARAM status is available only for earlier frames and returns `0` for failed or skipped execution and `1` for success. Receipts retain the distinct skipped status described below.
+FRAMEPARAM status is available only for earlier frames and returns `0` for failure, `1` for success, and `2` for skipped execution.
 
 `TXPARAM(0x01)` returns `nonce_seq`; `0x0C` through `0x0F` expose the first nonce key, pre-state legacy nonce, key count, and key-set hash. `TXPARAM(0x10)` returns the recent-root reference count.
 

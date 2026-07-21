@@ -7,9 +7,9 @@ import {MODULE_TYPE_SIGNER, ERC1271_MAGICVALUE, ERC1271_INVALID} from "../types/
 /// @title ECDSASigner8141
 /// @notice ECDSA signer for the Kernel8141 permission system.
 /// @dev Each (account, permissionId) pair maps to one ECDSA signer address.
-///      Uses assembly-based storage to ensure STO-021 compliance in VERIFY frames:
-///      slot = keccak256(account || baseSlot(permissionId)), keeping account as the
-///      outermost keccak key so the node recognizes it as associated storage.
+///      Stores signer configuration in the module contract. The latest EIP-8141
+///      public mempool rejects these external storage reads, so permission-mode
+///      validation requires a private pool or migration into account storage.
 contract ECDSASigner8141 is ISigner8141 {
     /// @dev Half of secp256k1 curve order, for EIP-2 signature malleability check.
     uint256 private constant _HALF_CURVE_ORDER = 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0;
@@ -18,7 +18,7 @@ contract ECDSASigner8141 is ISigner8141 {
 
     event SignerRegistered(address indexed account, bytes32 indexed id, address signer);
 
-    // ── STO-021 compliant storage ────────────────────────────────────────
+    // ── Module storage ───────────────────────────────────────────────────
 
     /// @dev Returns the base slot for a given permissionId.
     ///      Each permissionId gets its own virtual mapping(address => address).

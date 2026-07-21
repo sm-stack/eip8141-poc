@@ -23,10 +23,11 @@ const suites = [
   { file: "e2e/mldsa/mldsa-basic.ts", name: "MLDSA Deploy" },
   { file: "e2e/eoa/eoa-batching.ts", name: "EOA Batching" },
   { file: "e2e/eoa/eoa-sponsor.ts", name: "EOA Sponsor" },
-  { file: "e2e/eoa/eoa-p256.ts", name: "EOA P256" },
+  { file: "e2e/eoa/eoa-p256.ts", name: "EOA P256 Default Rejection" },
   { file: "e2e/phase1/acceptance.ts", name: "Phase 1 Acceptance" },
   { file: "e2e/phase2/acceptance.ts", name: "Phase 2 Acceptance" },
   { file: "e2e/phase3/acceptance.ts", name: "Phase 3 Acceptance" },
+  { file: "e2e/privacy-pool/relayerless-withdrawal.ts", name: "Relayerless Privacy Pool" },
   { file: "e2e/benchmark/gas-benchmark.ts", name: "Gas Benchmark" },
 ];
 

@@ -330,7 +330,7 @@ async function main() {
     maxPriorityFeePerGas: 1n,
   });
   const reorgHash = await sendRaw(publicClient, reorgPending.raw);
-  await publicClient.request({ method: "debug_setHead", params: [toHex(beforeWrite)] });
+  await (publicClient as any).request({ method: "debug_setHead", params: [toHex(beforeWrite)] });
   await waitUntilDropped(publicClient, reorgHash);
   console.log("PASS head rewind revalidates and evicts missing recent roots");
 

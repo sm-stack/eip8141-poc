@@ -120,13 +120,13 @@ async function main() {
   const atomic = await signAndSend(publicClient, await transactionBase(publicClient, sender.address), atomicFrames, [sender]);
   const atomicReceipt: any = await waitForReceipt(publicClient, atomic.hash);
   const statuses = atomicReceipt.frameReceipts?.map((frame: any) => frame.status);
-  if (JSON.stringify(statuses) !== JSON.stringify(["0x1", "0x1", "0x0", "0x3"])) {
+  if (JSON.stringify(statuses) !== JSON.stringify(["0x1", "0x1", "0x0", "0x2"])) {
     throw new Error(`atomic statuses: ${JSON.stringify(statuses)}`);
   }
   if (BigInt(atomicReceipt.frameReceipts[3].gasUsed) !== 0n) throw new Error("skipped frame consumed gas");
   const stored = await publicClient.readContract({ address: target, abi: targetAbi, functionName: "value" });
   if (stored !== 0n) throw new Error(`atomic rollback left value ${stored}`);
-  console.log("PASS atomic rollback, status 3, and skipped gas refund");
+  console.log("PASS atomic rollback, status 2, and skipped gas refund");
 
   const simpleConstructor = encodeAbiParameters(parseAbiParameters("address"), [sender.address]);
   const simpleInitCode = `${loadBytecode("Simple8141Account")}${simpleConstructor.slice(2)}` as Hex;
@@ -152,7 +152,7 @@ async function main() {
   console.log("PASS SIGPARAM and FRAMEPARAM runtime wrappers");
 
   const latest = await publicClient.getBlock();
-  const validExpiry = makeExpiryFrame(latest.timestamp + 60n, 20_000n);
+  const validExpiry = makeExpiryFrame(latest.timestamp + 60n, 10_000n);
   const validFrames: Frame[] = [
     validExpiry,
     { mode: "verify", flags: 3, target: null, gasLimit: 80_000n, value: 0n, data: "0x" },
@@ -164,7 +164,7 @@ async function main() {
   console.log("PASS valid expiry transaction");
 
   const expiredFrames = [...validFrames];
-  expiredFrames[0] = makeExpiryFrame(latest.timestamp - 1n, 20_000n);
+  expiredFrames[0] = makeExpiryFrame(latest.timestamp - 1n, 10_000n);
   const expiredBase = await transactionBase(publicClient, sender.address);
   const expiredPlaceholder = makeEoaSignaturePlaceholder(sender.address);
   const expiredUnsigned = {
@@ -178,7 +178,7 @@ async function main() {
 
   const pendingHead = await publicClient.getBlock();
   const pendingFrames = [...validFrames];
-  pendingFrames[0] = makeExpiryFrame(pendingHead.timestamp + 14n, 20_000n);
+  pendingFrames[0] = makeExpiryFrame(pendingHead.timestamp + 14n, 10_000n);
   const pendingBase = await transactionBase(publicClient, sender.address);
   pendingBase.maxPriorityFeePerGas = 1n;
   pendingBase.maxFeePerGas = 1n;

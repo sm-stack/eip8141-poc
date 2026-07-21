@@ -10,7 +10,7 @@ import {
   type TransactionSerializableFrame,
 } from "viem/eip8141";
 import { createTestClients, waitForReceipt } from "../helpers/client.js";
-import { DEAD_ADDR, DEV_KEY, RPC_URL } from "../helpers/config.js";
+import { DEAD_ADDR, DEV_KEY } from "../helpers/config.js";
 import { deployContract, loadBytecode } from "../helpers/deploy.js";
 
 const nonceManager = "0x0000000000000000000000000000000000008250" as Address;
@@ -54,31 +54,6 @@ async function sendRaw(publicClient: any, raw: Hex): Promise<Hex> {
   })) as Hex;
 }
 
-async function sendBatch(raws: Hex[]): Promise<Hex[]> {
-  const response = await fetch(RPC_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(
-      raws.map((raw, index) => ({
-        jsonrpc: "2.0",
-        id: index + 1,
-        method: "eth_sendRawTransaction",
-        params: [raw],
-      })),
-    ),
-  });
-  const results = (await response.json()) as { id: number; result?: Hex; error?: unknown }[];
-  if (results.some(({ error, result }) => error || !result))
-    throw new Error(`batch submission failed: ${JSON.stringify(results)}`);
-  return results
-    .sort((a, b) => a.id - b.id)
-    .map(({ result }) => {
-      if (!/^0x[0-9a-fA-F]{64}$/.test(result!))
-        throw new Error(`batch submission returned invalid hash: ${result}`);
-      return result!;
-    });
-}
-
 async function expectRejected(publicClient: any, raw: Hex, label: string) {
   try {
     await sendRaw(publicClient, raw);
@@ -97,14 +72,15 @@ async function main() {
     buildRaw(publicClient, sender, [101n], 0n),
     buildRaw(publicClient, sender, [102n], 0n),
   ]);
-  const parallelHashes = await sendBatch(parallelRaws);
-  console.log(`INFO parallel transaction hashes: ${parallelHashes.join(", ")}`);
-  const parallelReceipts = await Promise.all(
-    parallelHashes.map((hash) => waitForReceipt(publicClient, hash)),
+  const firstParallelHash = await sendRaw(publicClient, parallelRaws[0]!);
+  await expectRejected(
+    publicClient,
+    parallelRaws[1]!,
+    "single pending frame transaction per sender",
   );
-  if (parallelReceipts[0].blockNumber !== parallelReceipts[1].blockNumber)
-    throw new Error("independent nonce domains were not included in the same block");
-  console.log("PASS independent nonce domains from one sender share a block");
+  await waitForReceipt(publicClient, firstParallelHash);
+  await waitForReceipt(publicClient, await sendRaw(publicClient, parallelRaws[1]!));
+  console.log("PASS independent nonce domains execute after the pending slot clears");
 
   await expectRejected(publicClient, parallelRaws[0]!, "consumed key replay rejection");
 
@@ -136,7 +112,7 @@ async function main() {
     publicClient,
     await sendRaw(publicClient, rollbackRaw),
   );
-  if (rollbackReceipt.frameReceipts[1].status !== "0x0" || rollbackReceipt.frameReceipts[2].status !== "0x3")
+  if (rollbackReceipt.frameReceipts[1].status !== "0x0" || rollbackReceipt.frameReceipts[2].status !== "0x2")
     throw new Error(`unexpected rollback statuses ${JSON.stringify(rollbackReceipt.frameReceipts)}`);
   if ((await getKeyedNonce(publicClient, { sender: sender.address, key: 301n })) !== 1n)
     throw new Error("payment approval nonce effect was rolled back");

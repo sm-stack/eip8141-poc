@@ -52,7 +52,7 @@ jobs:
           EIP8141_VECTOR_PATH: ${{ github.workspace }}/.context/test-vectors/frame-transaction-v1.json
 
       - name: Test viem
-        run: pnpm vitest run src/eip8141
+        run: pnpm vitest run src/eip8141 src/utils/encoding/toRlp.test.ts
         working-directory: viem-eip8141
 
       - name: Test contracts
@@ -61,3 +61,6 @@ jobs:
 
       - name: Run Phase 1-3 acceptance
         run: bash scripts/run-phase-e2e.sh
+
+      - name: Run relayerless privacy-pool acceptance
+        run: bash scripts/run-privacy-pool-e2e.sh

@@ -23,7 +23,7 @@ contract SelectorPolicy8141 is IPolicy8141 {
     /// @inheritdoc IPolicy8141
     /// @dev EIP-8141 native: reads SENDER frame's first 4 bytes (selector) via cross-frame reading.
     /// @dev Uses msg.sender (not account param) as storage key for EIP-8141 VERIFY frame
-    ///      storage access compliance (STO-021). msg.sender == account in this context.
+    ///      This module storage is not eligible for the latest EIP-8141 public mempool.
     function checkFrameTxPolicy(bytes32 id, address, bytes32, uint256 senderFrameIndex)
         external
         view

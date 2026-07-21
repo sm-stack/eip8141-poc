@@ -64,7 +64,7 @@ The dedicated framepool performs:
 3. validation-prefix recognition, skipping the canonical expiry frame;
 4. expiry deadline checking and rechecking;
 5. validation-prefix gas budgeting;
-6. ERC-7562-style tracing for ordinary VERIFY frames;
+6. EIP-8141 validation-prefix tracing for ordinary VERIFY frames;
 7. payer solvency and reservation accounting.
 
 The canonical paymaster is recognized by runtime hash. Its pay frame is exempt from the generic validation tracer but must execute successfully and approve payment. Solvency subtracts both locally reserved pending maximum costs and the pending withdrawal amount in canonical storage slot 1. Non-canonical paymasters remain limited to one pending transaction.
@@ -86,7 +86,7 @@ payer
 frameReceipts[] { status, gasUsed, logs }
 ```
 
-Status values are normalized to failed `0`, successful `1`, or skipped `3`. Transaction-level cumulative gas remains available through the standard receipt field.
+Status values are normalized to failed `0`, successful `1`, or skipped `2`. Transaction-level cumulative gas remains available through the standard receipt field.
 
 ## Genesis
 
