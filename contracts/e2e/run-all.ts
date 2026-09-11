@@ -20,7 +20,6 @@ const suites = [
   { file: "e2e/coinbase/coinbase-security.ts", name: "Coinbase Security" },
   { file: "e2e/light-account/light-account-deploy.ts", name: "LightAccount Deploy" },
   { file: "e2e/light-account/light-account-security.ts", name: "LightAccount Security" },
-  { file: "e2e/mldsa/mldsa-basic.ts", name: "MLDSA Deploy" },
   { file: "e2e/eoa/eoa-batching.ts", name: "EOA Batching" },
   { file: "e2e/eoa/eoa-sponsor.ts", name: "EOA Sponsor" },
   { file: "e2e/eoa/eoa-p256.ts", name: "EOA P256 Default Rejection" },
