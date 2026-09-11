@@ -17,7 +17,7 @@ stop_devnet() {
 trap stop_devnet EXIT INT TERM
 
 echo "=== Privacy pool: starting fresh devnet ==="
-FRAMEPOOL_MAX_VERIFY_GAS=500000 bash "$ROOT_DIR/devnet/run.sh" >"$DEVNET_LOG" 2>&1 &
+bash "$ROOT_DIR/devnet/run.sh" >"$DEVNET_LOG" 2>&1 &
 DEVNET_PID=$!
 
 ready=false
