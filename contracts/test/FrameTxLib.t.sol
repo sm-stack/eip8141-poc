@@ -13,7 +13,7 @@ contract FrameTxLibHarness {
         return (FrameTxLib.FRAME_FLAG_SCOPE_MASK, FrameTxLib.FRAME_FLAG_ATOMIC_BATCH);
     }
 
-    function txParamSelectors() external pure returns (uint8[17] memory selectors) {
+    function txParamSelectors() external pure returns (uint8[18] memory selectors) {
         selectors = [
             FrameTxLib.TX_PARAM_TYPE,
             FrameTxLib.TX_PARAM_NONCE,
@@ -27,15 +27,16 @@ contract FrameTxLibHarness {
             FrameTxLib.TX_PARAM_FRAME_COUNT,
             FrameTxLib.TX_PARAM_FRAME_INDEX,
             FrameTxLib.TX_PARAM_SIGNATURE_COUNT,
-            FrameTxLib.TX_PARAM_NONCE_KEY_0,
-            FrameTxLib.TX_PARAM_LEGACY_NONCE,
+            FrameTxLib.TX_PARAM_STATE_GAS_LEFT,
             FrameTxLib.TX_PARAM_NONCE_KEY_COUNT,
             FrameTxLib.TX_PARAM_NONCE_KEYS_HASH,
-            FrameTxLib.TX_PARAM_RECENT_ROOT_REF_COUNT
+            FrameTxLib.TX_PARAM_RECENT_ROOT_REF_COUNT,
+            FrameTxLib.TX_PARAM_NONCE_KEY_0,
+            FrameTxLib.TX_PARAM_LEGACY_NONCE
         ];
     }
 
-    function frameParamSelectors() external pure returns (uint8[9] memory selectors) {
+    function frameParamSelectors() external pure returns (uint8[12] memory selectors) {
         selectors = [
             FrameTxLib.FRAME_PARAM_TARGET,
             FrameTxLib.FRAME_PARAM_GAS_LIMIT,
@@ -45,7 +46,10 @@ contract FrameTxLibHarness {
             FrameTxLib.FRAME_PARAM_STATUS,
             FrameTxLib.FRAME_PARAM_ALLOWED_SCOPE,
             FrameTxLib.FRAME_PARAM_ATOMIC_BATCH,
-            FrameTxLib.FRAME_PARAM_VALUE
+            FrameTxLib.FRAME_PARAM_VALUE,
+            FrameTxLib.FRAME_PARAM_STATE_GAS_LIMIT,
+            FrameTxLib.FRAME_PARAM_EXECUTION_GAS_USED,
+            FrameTxLib.FRAME_PARAM_STATE_GAS_USED
         ];
     }
 
@@ -89,18 +93,23 @@ contract FrameTxLibTest is Test {
     }
 
     function test_txParamSelectorsAreContiguous() public {
-        uint8[17] memory selectors = harness.txParamSelectors();
+        uint8[18] memory selectors = harness.txParamSelectors();
         for (uint8 i; i < selectors.length; ++i) {
             assertEq(selectors[i], i);
         }
+        // Bogota-draft ordering: state gas left precedes the keyed nonce selectors.
+        assertEq(FrameTxLib.TX_PARAM_STATE_GAS_LEFT, 0x0c);
+        assertEq(FrameTxLib.TX_PARAM_NONCE_KEY_0, 0x10);
+        assertEq(FrameTxLib.TX_PARAM_LEGACY_NONCE, 0x11);
     }
 
-    function test_senderValueFrameParamSelector() public {
-        uint8[9] memory selectors = harness.frameParamSelectors();
+    function test_frameParamSelectorsAreContiguous() public {
+        uint8[12] memory selectors = harness.frameParamSelectors();
         for (uint8 i; i < selectors.length; ++i) {
             assertEq(selectors[i], i);
         }
         assertEq(selectors[8], FrameTxLib.FRAME_PARAM_VALUE);
+        assertEq(selectors[9], FrameTxLib.FRAME_PARAM_STATE_GAS_LIMIT);
     }
 
     function test_sigParamSelectorsAreContiguous() public {

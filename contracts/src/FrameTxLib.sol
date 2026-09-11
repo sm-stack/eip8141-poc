@@ -31,11 +31,12 @@ library FrameTxLib {
     uint8 internal constant TX_PARAM_FRAME_COUNT = 0x09;
     uint8 internal constant TX_PARAM_FRAME_INDEX = 0x0a;
     uint8 internal constant TX_PARAM_SIGNATURE_COUNT = 0x0b;
-    uint8 internal constant TX_PARAM_NONCE_KEY_0 = 0x0c;
-    uint8 internal constant TX_PARAM_LEGACY_NONCE = 0x0d;
-    uint8 internal constant TX_PARAM_NONCE_KEY_COUNT = 0x0e;
-    uint8 internal constant TX_PARAM_NONCE_KEYS_HASH = 0x0f;
-    uint8 internal constant TX_PARAM_RECENT_ROOT_REF_COUNT = 0x10;
+    uint8 internal constant TX_PARAM_STATE_GAS_LEFT = 0x0c;
+    uint8 internal constant TX_PARAM_NONCE_KEY_COUNT = 0x0d;
+    uint8 internal constant TX_PARAM_NONCE_KEYS_HASH = 0x0e;
+    uint8 internal constant TX_PARAM_RECENT_ROOT_REF_COUNT = 0x0f;
+    uint8 internal constant TX_PARAM_NONCE_KEY_0 = 0x10;
+    uint8 internal constant TX_PARAM_LEGACY_NONCE = 0x11;
 
     uint8 internal constant RECENT_ROOT_FIELD_SOURCE_ID = 0x00;
     uint8 internal constant RECENT_ROOT_FIELD_SLOT = 0x01;
@@ -51,6 +52,9 @@ library FrameTxLib {
     uint8 internal constant FRAME_PARAM_ALLOWED_SCOPE = 0x06;
     uint8 internal constant FRAME_PARAM_ATOMIC_BATCH = 0x07;
     uint8 internal constant FRAME_PARAM_VALUE = 0x08;
+    uint8 internal constant FRAME_PARAM_STATE_GAS_LIMIT = 0x09;
+    uint8 internal constant FRAME_PARAM_EXECUTION_GAS_USED = 0x0a;
+    uint8 internal constant FRAME_PARAM_STATE_GAS_USED = 0x0b;
 
     // SIGPARAM selectors.
     uint8 internal constant SIG_PARAM_SIGNER = 0x00;
@@ -171,6 +175,11 @@ library FrameTxLib {
         return uint256(txParam(TX_PARAM_MAX_COST));
     }
 
+    /// @notice Remaining state gas of the current frame.
+    function stateGasLeft() internal pure returns (uint256) {
+        return uint256(txParam(TX_PARAM_STATE_GAS_LEFT));
+    }
+
     function frameTarget(uint256 frameIndex) internal pure returns (address) {
         return address(uint160(uint256(frameParam(FRAME_PARAM_TARGET, frameIndex))));
     }
@@ -206,6 +215,19 @@ library FrameTxLib {
 
     function frameValue(uint256 frameIndex) internal pure returns (uint256) {
         return uint256(frameParam(FRAME_PARAM_VALUE, frameIndex));
+    }
+
+    function frameStateGasLimit(uint256 frameIndex) internal pure returns (uint256) {
+        return uint256(frameParam(FRAME_PARAM_STATE_GAS_LIMIT, frameIndex));
+    }
+
+    /// @dev Gas used selectors are only valid for an earlier frame.
+    function frameExecutionGasUsed(uint256 frameIndex) internal pure returns (uint256) {
+        return uint256(frameParam(FRAME_PARAM_EXECUTION_GAS_USED, frameIndex));
+    }
+
+    function frameStateGasUsed(uint256 frameIndex) internal pure returns (uint256) {
+        return uint256(frameParam(FRAME_PARAM_STATE_GAS_USED, frameIndex));
     }
 
     function currentFrameMode() internal pure returns (uint8) {
