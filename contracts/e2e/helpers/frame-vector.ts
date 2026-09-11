@@ -17,8 +17,9 @@ type StoredTransaction = Omit<
   nonceKeys: string[];
   nonceSeq: string;
   frames: Array<
-    Omit<TransactionSerializableFrame["frames"][number], "gasLimit" | "value"> & {
+    Omit<TransactionSerializableFrame["frames"][number], "gasLimit" | "stateGasLimit" | "value"> & {
       gasLimit: string;
+      stateGasLimit: string;
       value: string;
     }
   >;
@@ -56,6 +57,7 @@ export function loadFrameTransactionVector(): FrameTransactionVector {
       frames: stored.transaction.frames.map((frame) => ({
         ...frame,
         gasLimit: BigInt(frame.gasLimit),
+        stateGasLimit: BigInt(frame.stateGasLimit),
         value: BigInt(frame.value),
       })),
       maxPriorityFeePerGas: BigInt(stored.transaction.maxPriorityFeePerGas),

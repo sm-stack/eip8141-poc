@@ -7,6 +7,15 @@ import {
   type Address,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+
+/**
+ * EIP-8272 slot of a block. Amsterdam headers carry the EIP-7843 `slotNumber`;
+ * older headers fall back to `timestamp / SECONDS_PER_SLOT`.
+ */
+export function blockSlot(block: any, secondsPerSlot = 12n): bigint {
+  if (block.slotNumber !== undefined && block.slotNumber !== null) return BigInt(block.slotNumber);
+  return BigInt(block.timestamp) / secondsPerSlot;
+}
 import { eip8141Devnet, frameActions } from "viem/eip8141";
 import { RPC_URL, DEV_KEY } from "./config.js";
 import { fund as logFund } from "./log.js";
@@ -56,7 +65,9 @@ export async function fundAccount(
   const fundHash = await walletClient.sendTransaction({
     to,
     value: parseEther(ethAmount),
-    gas: 50_000n,
+    // Amsterdam (EIP-8037) charges 120 * 1530 state gas to create the
+    // recipient account on top of the 21,000 base cost.
+    gas: 250_000n,
     maxFeePerGas: 10_000_000_000n,
     maxPriorityFeePerGas: 1_000_000_000n,
   });

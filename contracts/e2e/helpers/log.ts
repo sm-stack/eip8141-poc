@@ -106,7 +106,7 @@ export function printReceipt(r: any) {
       const fs = FRAME_STATUS[fr.status] || { name: `Unknown(${fr.status})`, color: c.yellow, icon: "?" };
       const frameLabel = `Frame[${i}]`;
       console.log(
-        `  ${c.dim}│${c.reset} ${c.dim}${frameLabel}:${c.reset} ${fs.color}${fs.icon} ${fs.name}${c.reset}  ${c.gray}gas: ${BigInt(fr.gasUsed).toLocaleString()}${c.reset}`
+        `  ${c.dim}│${c.reset} ${c.dim}${frameLabel}:${c.reset} ${fs.color}${fs.icon} ${fs.name}${c.reset}  ${c.gray}gas: exec ${BigInt(fr.gasUsed.execution).toLocaleString()} / state ${BigInt(fr.gasUsed.state).toLocaleString()}${c.reset}`
       );
     }
   }

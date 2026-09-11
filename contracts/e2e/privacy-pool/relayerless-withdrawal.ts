@@ -15,7 +15,7 @@ import {
   type Frame,
   type TransactionSerializableFrame,
 } from "viem/eip8141";
-import { createTestClients, waitForReceipt } from "../helpers/client.js";
+import { createTestClients, waitForReceipt, blockSlot } from "../helpers/client.js";
 import { deployContract, loadBytecode } from "../helpers/deploy.js";
 
 const denomination = parseEther("1");
@@ -156,6 +156,7 @@ function frames(
       flags: 3,
       target: null,
       gasLimit: verifyGasLimit,
+      stateGasLimit: 100_000n,
       value: 0n,
       data: encodeFunctionData({
         abi: poolAbi,
@@ -168,6 +169,7 @@ function frames(
       flags: 0,
       target: null,
       gasLimit: executionGasLimit,
+      stateGasLimit: 500_000n,
       value: 0n,
       data: encodeFunctionData({
         abi: poolAbi,
@@ -233,7 +235,7 @@ async function main() {
   const depositReceipt = await waitForReceipt(publicClient, depositHash);
   if (depositReceipt.status !== "0x1") throw new Error("deposit failed");
   const depositBlock = await publicClient.getBlock({ blockNumber: BigInt(depositReceipt.blockNumber) });
-  const rootSlot = depositBlock.timestamp / 12n;
+  const rootSlot = blockSlot(depositBlock);
   const root = (await (publicClient as any).readContract({
     address: deployedPool.address,
     abi: poolAbi,
@@ -255,7 +257,7 @@ async function main() {
   const secondDepositBlock = await publicClient.getBlock({
     blockNumber: BigInt(secondDepositReceipt.blockNumber),
   });
-  const secondRootSlot = secondDepositBlock.timestamp / 12n;
+  const secondRootSlot = blockSlot(secondDepositBlock);
   const secondRoot = (await (publicClient as any).readContract({
     address: deployedPool.address,
     abi: poolAbi,
@@ -386,12 +388,21 @@ async function settleGasCharge(
   initialIntent: Intent,
   executionGasLimit: bigint,
 ): Promise<Intent> {
+  // gasCharge is part of the signed intent and therefore of the frame calldata,
+  // and calldata gas depends on zero/non-zero bytes, so the fixed point can
+  // cycle. Retry with a slightly different fee cap when that happens.
   let intent = initialIntent;
-  for (let i = 0; i < 8; i++) {
-    const transaction = buildTransaction(pool, sourceId, proof, intent, executionGasLimit);
-    const gasCharge = getFrameTransactionGas(transaction) * intent.maxFeePerGas;
-    if (gasCharge === intent.gasCharge) return intent;
-    intent = { ...intent, gasCharge };
+  for (let bump = 0n; bump < 64n; bump++) {
+    intent = { ...intent, gasCharge: 0n, maxFeePerGas: initialIntent.maxFeePerGas + bump };
+    const seen = new Set<bigint>();
+    for (let i = 0; i < 16; i++) {
+      const transaction = buildTransaction(pool, sourceId, proof, intent, executionGasLimit);
+      const gasCharge = getFrameTransactionGas(transaction) * intent.maxFeePerGas;
+      if (gasCharge === intent.gasCharge) return intent;
+      if (seen.has(gasCharge)) break;
+      seen.add(gasCharge);
+      intent = { ...intent, gasCharge };
+    }
   }
   throw new Error("gasCharge did not converge");
 }

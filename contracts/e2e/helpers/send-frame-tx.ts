@@ -34,6 +34,8 @@ export interface DeployFrameParams {
   data: Hex;
   /** Gas limit for the deploy frame. @default 500_000n */
   gasLimit?: bigint;
+  /** State gas limit for the deploy frame (account + code creation). @default 1_000_000n */
+  stateGasLimit?: bigint;
 }
 
 export interface AccountOptions {
@@ -52,6 +54,7 @@ function buildDeployFrame(deploy?: DeployFrameParams) {
     flags: 0,
     target: deploy.target,
     gasLimit: deploy.gasLimit ?? 500_000n,
+    stateGasLimit: deploy.stateGasLimit ?? 1_000_000n,
     value: 0n,
     data: deploy.data,
   });
@@ -65,6 +68,7 @@ function defaultEncodeCalls(senderGas: bigint) {
       flags: 0,
       target: null,
       gasLimit: senderGas,
+      stateGasLimit: 500_000n,
       value: 0n,
       data: c.data ?? ("0x" as Hex),
     }));
@@ -89,7 +93,7 @@ export function createKernelAccount(
         functionName: "validate",
         args: [sig, scope],
       });
-      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, value: 0n, data }];
+      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, stateGasLimit: 100_000n, value: 0n, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
     getDeployFrame: buildDeployFrame(deploy),
@@ -116,7 +120,7 @@ export function createKernelValidatorAccount(
         functionName: "validateFromSenderFrame",
         args: [prefixedSig, scope],
       });
-      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, value: 0n, data }];
+      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, stateGasLimit: 100_000n, value: 0n, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
     getDeployFrame: buildDeployFrame(deploy),
@@ -143,7 +147,7 @@ export function createKernelPermissionAccount(
         functionName: "validatePermission",
         args: [fullSig, scope],
       });
-      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, value: 0n, data }];
+      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, stateGasLimit: 100_000n, value: 0n, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
     getDeployFrame: buildDeployFrame(deploy),
@@ -174,7 +178,7 @@ export function createCoinbaseAccount(
         functionName: "validate",
         args: [signatureWrapper, scope],
       });
-      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, value: 0n, data }];
+      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, stateGasLimit: 100_000n, value: 0n, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
     getDeployFrame: buildDeployFrame(deploy),
@@ -202,7 +206,7 @@ export function createLightAccount(
         functionName: "validate",
         args: [typedSig, scope],
       });
-      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, value: 0n, data }];
+      return [{ mode: "verify" as const, flags: scope, target: null, gasLimit: verifyGas, stateGasLimit: 100_000n, value: 0n, data }];
     },
     encodeCalls: defaultEncodeCalls(senderGas),
     getDeployFrame: buildDeployFrame(deploy),

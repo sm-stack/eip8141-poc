@@ -84,8 +84,8 @@ async function main() {
     nonce: 0,
     sender: p256Addr,
     frames: [
-      { mode: "verify", flags: 3, target: null, gasLimit: 90_000n, value: 0n, data: "0x" },
-      { mode: "sender", flags: 0, target: DEAD_ADDR, gasLimit: 30_000n, value: 1n, data: "0x" },
+      { mode: "verify", flags: 3, target: null, gasLimit: 90_000n, stateGasLimit: 100_000n, value: 0n, data: "0x" },
+      { mode: "sender", flags: 0, target: DEAD_ADDR, gasLimit: 30_000n, stateGasLimit: 500_000n, value: 1n, data: "0x" },
     ],
     signatures: [placeholder],
     recentRootReferences: [],

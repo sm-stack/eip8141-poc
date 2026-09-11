@@ -1,5 +1,15 @@
 import type { Address } from "viem";
 
+/** Two-dimensional frame gas usage as reported by `eth_getTransactionReceipt`. */
+export type FrameGasUsed = { execution: bigint; state: bigint; total: bigint };
+
+/** Decode a frame receipt `gasUsed` object (`{ execution, state }`). */
+export function frameGasUsed(frameReceipt: any): FrameGasUsed {
+  const execution = BigInt(frameReceipt.gasUsed.execution);
+  const state = BigInt(frameReceipt.gasUsed.state);
+  return { execution, state, total: execution + state };
+}
+
 export function verifyReceipt(
   receipt: any,
   accountAddr: Address,

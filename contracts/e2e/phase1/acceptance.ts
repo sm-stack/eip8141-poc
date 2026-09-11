@@ -22,6 +22,7 @@ import { DEV_KEY, DEAD_ADDR } from "../helpers/config.js";
 import { createTestClients, fundAccount, waitForReceipt } from "../helpers/client.js";
 import { deployContract, loadBytecode } from "../helpers/deploy.js";
 import { loadFrameTransactionVector } from "../helpers/frame-vector.js";
+import { frameGasUsed } from "../helpers/receipt.js";
 
 const targetAbi = [
   { type: "function", name: "setValue", inputs: [{ name: "newValue", type: "uint256" }], outputs: [], stateMutability: "nonpayable" },
@@ -112,10 +113,10 @@ async function main() {
   const setTwo = encodeFunctionData({ abi: targetAbi, functionName: "setValue", args: [2n] });
   const fail = encodeFunctionData({ abi: targetAbi, functionName: "fail" });
   const atomicFrames: Frame[] = [
-    { mode: "verify", flags: 3, target: null, gasLimit: 80_000n, value: 0n, data: "0x" },
-    { mode: "sender", flags: 4, target, gasLimit: 80_000n, value: 0n, data: setOne },
-    { mode: "sender", flags: 4, target, gasLimit: 80_000n, value: 0n, data: fail },
-    { mode: "sender", flags: 0, target, gasLimit: 80_000n, value: 0n, data: setTwo },
+    { mode: "verify", flags: 3, target: null, gasLimit: 80_000n, stateGasLimit: 100_000n, value: 0n, data: "0x" },
+    { mode: "sender", flags: 4, target, gasLimit: 80_000n, stateGasLimit: 500_000n, value: 0n, data: setOne },
+    { mode: "sender", flags: 4, target, gasLimit: 80_000n, stateGasLimit: 500_000n, value: 0n, data: fail },
+    { mode: "sender", flags: 0, target, gasLimit: 80_000n, stateGasLimit: 500_000n, value: 0n, data: setTwo },
   ];
   const atomic = await signAndSend(publicClient, await transactionBase(publicClient, sender.address), atomicFrames, [sender]);
   const atomicReceipt: any = await waitForReceipt(publicClient, atomic.hash);
@@ -123,7 +124,7 @@ async function main() {
   if (JSON.stringify(statuses) !== JSON.stringify(["0x1", "0x1", "0x0", "0x2"])) {
     throw new Error(`atomic statuses: ${JSON.stringify(statuses)}`);
   }
-  if (BigInt(atomicReceipt.frameReceipts[3].gasUsed) !== 0n) throw new Error("skipped frame consumed gas");
+  if (frameGasUsed(atomicReceipt.frameReceipts[3]).total !== 0n) throw new Error("skipped frame consumed gas");
   const stored = await publicClient.readContract({ address: target, abi: targetAbi, functionName: "value" });
   if (stored !== 0n) throw new Error(`atomic rollback left value ${stored}`);
   console.log("PASS atomic rollback, status 2, and skipped gas refund");
@@ -155,8 +156,8 @@ async function main() {
   const validExpiry = makeExpiryFrame(latest.timestamp + 60n, 10_000n);
   const validFrames: Frame[] = [
     validExpiry,
-    { mode: "verify", flags: 3, target: null, gasLimit: 80_000n, value: 0n, data: "0x" },
-    { mode: "sender", flags: 0, target: DEAD_ADDR, gasLimit: 30_000n, value: 0n, data: "0x" },
+    { mode: "verify", flags: 3, target: null, gasLimit: 80_000n, stateGasLimit: 100_000n, value: 0n, data: "0x" },
+    { mode: "sender", flags: 0, target: DEAD_ADDR, gasLimit: 30_000n, stateGasLimit: 500_000n, value: 0n, data: "0x" },
   ];
   const valid = await signAndSend(publicClient, await transactionBase(publicClient, sender.address), validFrames, [sender]);
   const validReceipt: any = await waitForReceipt(publicClient, valid.hash);
@@ -208,6 +209,7 @@ async function main() {
       flags: 1,
       target: paymaster,
       gasLimit: 50_000n,
+      stateGasLimit: 100_000n,
       value: 0n,
       data: encodeFunctionData({ abi: canonicalPaymasterAbi, functionName: "validate", args: [1n] }),
     }),

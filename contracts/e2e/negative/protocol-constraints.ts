@@ -126,8 +126,8 @@ async function main() {
       signatures: [],
       recentRootReferences: [],
       frames: [
-        { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, data: '0x' },
-        { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
+        { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, stateGasLimit: 500_000n, data: '0x' },
+        { mode: 'verify', target: null, gasLimit: 200_000n, stateGasLimit: 100_000n, data: '0x' },
       ],
       type: 'frame',
     };
@@ -159,8 +159,8 @@ async function main() {
       signatures: [],
       recentRootReferences: [],
       frames: [
-        { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
-        { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, data: '0x' },
+        { mode: 'verify', target: null, gasLimit: 200_000n, stateGasLimit: 100_000n, data: '0x' },
+        { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, stateGasLimit: 500_000n, data: '0x' },
       ],
       type: 'frame',
     };
@@ -192,8 +192,8 @@ async function main() {
       signatures: [],
       recentRootReferences: [],
       frames: [
-        { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
-        { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, data: '0x' },
+        { mode: 'verify', target: null, gasLimit: 200_000n, stateGasLimit: 100_000n, data: '0x' },
+        { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, stateGasLimit: 500_000n, data: '0x' },
       ],
       type: 'frame',
     };
@@ -225,9 +225,9 @@ async function main() {
       signatures: [],
       recentRootReferences: [],
       frames: [
-        { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
-        { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
-        { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, data: '0x' },
+        { mode: 'verify', target: null, gasLimit: 200_000n, stateGasLimit: 100_000n, data: '0x' },
+        { mode: 'verify', target: null, gasLimit: 200_000n, stateGasLimit: 100_000n, data: '0x' },
+        { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, stateGasLimit: 500_000n, data: '0x' },
       ],
       type: 'frame',
     };
@@ -284,8 +284,8 @@ async function main() {
       signatures: [],
       recentRootReferences: [],
       frames: [
-        { mode: 'verify', target: null, gasLimit: 200_000n, data: '0x' },
-        { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, data: '0x' },
+        { mode: 'verify', target: null, gasLimit: 200_000n, stateGasLimit: 100_000n, data: '0x' },
+        { mode: 'sender', target: DEAD_ADDR, gasLimit: 50_000n, stateGasLimit: 500_000n, data: '0x' },
       ],
       type: 'frame',
     };

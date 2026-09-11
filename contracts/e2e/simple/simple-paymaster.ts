@@ -158,6 +158,7 @@ async function main() {
         flags: 1,
         target: paymasterAddr,
         gasLimit: 200_000n,
+        stateGasLimit: 100_000n,
         value: 0n,
         data: PAYMASTER_VALIDATE_SELECTOR,
       };
@@ -168,6 +169,7 @@ async function main() {
         flags: 0,
         target: paymasterAddr,
         gasLimit: 100_000n,
+        stateGasLimit: 500_000n,
         value: 0n,
         data: postOpCalldata,
       };

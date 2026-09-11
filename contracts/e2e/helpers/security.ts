@@ -43,8 +43,8 @@ export async function buildUnsignedFrameTx(
     signatures: [],
     recentRootReferences: [],
     frames: [
-      { mode: "verify", target: null, gasLimit: 300_000n, data: "0x" },
-      { mode: "sender", target: null, gasLimit: 500_000n, data: senderCalldata },
+      { mode: "verify", target: null, gasLimit: 300_000n, stateGasLimit: 100_000n, data: "0x" },
+      { mode: "sender", target: null, gasLimit: 500_000n, stateGasLimit: 500_000n, data: senderCalldata },
     ],
     type: "frame",
   };

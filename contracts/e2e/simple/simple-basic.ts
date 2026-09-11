@@ -85,6 +85,8 @@ async function main() {
       flags: 0,
       target: deployerAddr,
       gasLimit: 500_000n,
+      // Account creation plus code deposit are charged as state gas (1,530/byte).
+      stateGasLimit: 4_000_000n,
       value: 0n,
       data: deployCalldata,
     }),

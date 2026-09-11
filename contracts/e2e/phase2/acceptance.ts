@@ -12,6 +12,7 @@ import {
 import { createTestClients, waitForReceipt } from "../helpers/client.js";
 import { DEAD_ADDR, DEV_KEY } from "../helpers/config.js";
 import { deployContract, loadBytecode } from "../helpers/deploy.js";
+import { frameGasUsed } from "../helpers/receipt.js";
 
 const nonceManager = "0x0000000000000000000000000000000000008250" as Address;
 const targetAbi = [
@@ -27,8 +28,8 @@ async function buildRaw(
 ) {
   const fees = await publicClient.estimateFeesPerGas();
   const txFrames = frames ?? [
-    { mode: "verify", flags: 3, target: null, gasLimit: 90_000n, value: 0n, data: "0x" },
-    { mode: "sender", flags: 0, target: DEAD_ADDR, gasLimit: 30_000n, value: 0n, data: "0x" },
+    { mode: "verify", flags: 3, target: null, gasLimit: 90_000n, stateGasLimit: 100_000n, value: 0n, data: "0x" },
+    { mode: "sender", flags: 0, target: DEAD_ADDR, gasLimit: 30_000n, stateGasLimit: 500_000n, value: 0n, data: "0x" },
   ];
   const placeholder = makeEoaSignaturePlaceholder(sender.address);
   const unsigned: TransactionSerializableFrame = {
@@ -88,8 +89,9 @@ async function main() {
   const firstUseReceipt = await waitForReceipt(publicClient, await sendRaw(publicClient, firstUseRaw));
   const reuseRaw = await buildRaw(publicClient, sender, [201n], 1n);
   const reuseReceipt = await waitForReceipt(publicClient, await sendRaw(publicClient, reuseRaw));
-  const firstVerifyGas = BigInt(firstUseReceipt.frameReceipts[0].gasUsed);
-  const reuseVerifyGas = BigInt(reuseReceipt.frameReceipts[0].gasUsed);
+  // The keyed-nonce first-use surcharge is charged as execution gas.
+  const firstVerifyGas = frameGasUsed(firstUseReceipt.frameReceipts[0]).execution;
+  const reuseVerifyGas = frameGasUsed(reuseReceipt.frameReceipts[0]).execution;
   if (firstVerifyGas - reuseVerifyGas !== 20_000n)
     throw new Error(`first-use gas delta ${firstVerifyGas - reuseVerifyGas}, want 20000`);
   console.log("PASS first-use 20000 gas surcharge and reuse exemption");
@@ -103,9 +105,9 @@ async function main() {
   );
   const fail = encodeFunctionData({ abi: targetAbi, functionName: "fail" });
   const rollbackFrames: Frame[] = [
-    { mode: "verify", flags: 3, target: null, gasLimit: 90_000n, value: 0n, data: "0x" },
-    { mode: "sender", flags: 4, target, gasLimit: 80_000n, value: 0n, data: fail },
-    { mode: "sender", flags: 0, target, gasLimit: 80_000n, value: 0n, data: "0x" },
+    { mode: "verify", flags: 3, target: null, gasLimit: 90_000n, stateGasLimit: 100_000n, value: 0n, data: "0x" },
+    { mode: "sender", flags: 4, target, gasLimit: 80_000n, stateGasLimit: 500_000n, value: 0n, data: fail },
+    { mode: "sender", flags: 0, target, gasLimit: 80_000n, stateGasLimit: 500_000n, value: 0n, data: "0x" },
   ];
   const rollbackRaw = await buildRaw(publicClient, sender, [301n], 0n, rollbackFrames);
   const rollbackReceipt = await waitForReceipt(

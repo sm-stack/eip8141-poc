@@ -43,9 +43,31 @@ export async function deployContract(
     nonce: BigInt(nonce),
   });
 
+  // Under Amsterdam (EIP-8037) code deposit and account creation are charged
+  // as state gas, so fixed pre-Amsterdam limits are far too small for larger
+  // contracts. Prefer the node's estimate (which includes state gas) and keep
+  // the caller-supplied value as a floor.
+  //
+  // Amsterdam splits a legacy transaction's gas into an execution budget capped
+  // at MAX_TX_GAS (EIP-7825, 16,777,216) and a state reservoir made of whatever
+  // exceeds that cap. A code deposit larger than ~10 KB therefore needs
+  // MAX_TX_GAS + state_gas, so the estimate is padded by the execution cap.
+  const maxTxGas = 16_777_216n;
+  let gasLimit = gas;
+  try {
+    const estimate: bigint = await publicClient.estimateGas({
+      account: devAddr,
+      data: bytecode,
+    });
+    const padded = (estimate * 12n) / 10n + maxTxGas;
+    if (padded > gasLimit) gasLimit = padded;
+  } catch {
+    // Fall back to the fixed limit; the receipt check below reports failures.
+  }
+
   const hash = await walletClient.sendTransaction({
     data: bytecode,
-    gas,
+    gas: gasLimit,
     maxFeePerGas: 10_000_000_000n,
     maxPriorityFeePerGas: 1_000_000_000n,
   });

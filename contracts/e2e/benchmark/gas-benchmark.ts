@@ -32,7 +32,7 @@ const DEAD_COINBASE = "0x000000000000000000000000000000000000DEA3" as Address;
 const DEAD_LIGHT    = "0x000000000000000000000000000000000000DeA4" as Address;
 import { createTestClients, waitForReceipt, fundAccount } from "../helpers/client.js";
 import { loadBytecode, deployContract } from "../helpers/deploy.js";
-import { verifyReceipt } from "../helpers/receipt.js";
+import { frameGasUsed, verifyReceipt } from "../helpers/receipt.js";
 import { kernelAbi, factoryAbi } from "../helpers/abis/kernel.js";
 import { walletAbi, factoryAbi as coinbaseFactoryAbi } from "../helpers/abis/coinbase.js";
 import { walletAbi as lightWalletAbi, factoryAbi as lightFactoryAbi } from "../helpers/abis/light-account.js";
@@ -69,8 +69,8 @@ const { publicClient, walletClient, devAddr } = createTestClients();
 function extractGas(receipt: any): { totalGas: bigint; verifyGas: bigint; senderGas: bigint } {
   return {
     totalGas: BigInt(receipt.gasUsed),
-    verifyGas: BigInt(receipt.frameReceipts[0].gasUsed),
-    senderGas: BigInt(receipt.frameReceipts[1].gasUsed),
+    verifyGas: frameGasUsed(receipt.frameReceipts[0]).total,
+    senderGas: frameGasUsed(receipt.frameReceipts[1]).total,
   };
 }
 

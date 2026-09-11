@@ -86,6 +86,7 @@ async function main() {
         flags: 1,
         target: sponsorAddr,
         gasLimit: 200_000n,
+        stateGasLimit: 100_000n,
         value: 0n,
         data,
       };

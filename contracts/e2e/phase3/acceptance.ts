@@ -13,7 +13,9 @@ import { privateKeyToAccount } from "viem/accounts";
 import {
   computeSigHash,
   computeSourceId,
+  getFrameTransactionFloorDataGas,
   getFrameTransactionGas,
+  getFrameTransactionIntrinsicGas,
   makeEoaSignaturePlaceholder,
   makeRootReference,
   serializeFrameTransaction,
@@ -23,10 +25,11 @@ import {
   type RecentRootReference,
   type TransactionSerializableFrame,
 } from "viem/eip8141";
-import { createTestClients, waitForReceipt } from "../helpers/client.js";
+import { createTestClients, waitForReceipt, blockSlot } from "../helpers/client.js";
 import { DEAD_ADDR, DEV_KEY } from "../helpers/config.js";
 import { deployContract, loadBytecode } from "../helpers/deploy.js";
 import { loadFrameTransactionVector } from "../helpers/frame-vector.js";
+import { frameGasUsed } from "../helpers/receipt.js";
 
 const recentRootAddress = "0x0000000000000000000000000000000000008272" as Address;
 const secondsPerSlot = 12n;
@@ -89,13 +92,13 @@ async function advanceTime(publicClient: any, seconds: bigint) {
 
 async function currentSlot(publicClient: any): Promise<bigint> {
   const block = await publicClient.getBlock();
-  return block.timestamp / secondsPerSlot;
+  return blockSlot(block, secondsPerSlot);
 }
 
 function defaultFrames(): Frame[] {
   return [
-    { mode: "verify", flags: 3, target: null, gasLimit: 90_000n, value: 0n, data: "0x" },
-    { mode: "sender", flags: 0, target: DEAD_ADDR, gasLimit: 30_000n, value: 0n, data: "0x" },
+    { mode: "verify", flags: 3, target: null, gasLimit: 90_000n, stateGasLimit: 100_000n, value: 0n, data: "0x" },
+    { mode: "sender", flags: 0, target: DEAD_ADDR, gasLimit: 30_000n, stateGasLimit: 500_000n, value: 0n, data: "0x" },
   ];
 }
 
@@ -154,22 +157,33 @@ async function main() {
   const writeHash = await writeRecentRoot(walletClient as any, { salt, root });
   const writeReceipt = await waitForReceipt(publicClient, writeHash);
   const writeBlock = await publicClient.getBlock({ blockNumber: BigInt(writeReceipt.blockNumber) });
-  const writeSlot = writeBlock.timestamp / secondsPerSlot;
+  const writeSlot = blockSlot(writeBlock, secondsPerSlot);
   const reference = makeRootReference({
     sourceId: computeSourceId(sender.address, salt),
     slot: writeSlot,
     root,
   });
 
+  // The framepool validates references against the simulated next block
+  // (slot S+1), so a reference to the write slot S is admitted while the chain
+  // is still in S but cannot execute until a block in S+1 is produced.
   const sameSlot = await buildRaw(publicClient, sender, nonceKey++, [reference]);
   if ((await currentSlot(publicClient)) !== writeSlot)
     throw new Error("devnet crossed a slot before the same-slot admission check");
-  await expectRejected(publicClient, sameSlot.raw, "same-slot reference rejection");
+  const sameSlotHash = await sendRaw(publicClient, sameSlot.raw);
+  const pendingInSameSlot = await publicClient.request({
+    method: "eth_getTransactionReceipt",
+    params: [sameSlotHash],
+  });
+  if (pendingInSameSlot !== null && (await currentSlot(publicClient)) === writeSlot)
+    throw new Error("same-slot reference executed in the write slot");
+  console.log("PASS same-slot reference is admitted but not executable in slot S");
 
   await advanceTime(publicClient, secondsPerSlot);
-  const validHash = await sendRaw(publicClient, sameSlot.raw);
-  const validReceipt = await waitForReceipt(publicClient, validHash);
+  const validReceipt = await waitForReceipt(publicClient, sameSlotHash);
   if (validReceipt.status !== "0x1") throw new Error("S+1 reference transaction failed");
+  if (blockSlot(await publicClient.getBlock({ blockNumber: BigInt(validReceipt.blockNumber) }), secondsPerSlot) <= writeSlot)
+    throw new Error("same-slot reference executed before slot S+1");
   console.log("PASS root written in S is referenceable from S+1");
 
   const slot = await currentSlot(publicClient);
@@ -204,7 +218,7 @@ async function main() {
   const doubleWriteBlock = await publicClient.getBlock({
     blockNumber: BigInt(doubleWriteReceipt.blockNumber),
   });
-  const doubleWriteSlot = doubleWriteBlock.timestamp / secondsPerSlot;
+  const doubleWriteSlot = blockSlot(doubleWriteBlock, secondsPerSlot);
   await advanceTime(publicClient, secondsPerSlot);
   const writerSourceId = computeSourceId(writer, writerSalt);
   const overwritten = makeRootReference({ sourceId: writerSourceId, slot: doubleWriteSlot, root: firstRoot });
@@ -229,16 +243,17 @@ async function main() {
   );
   if (fundingReceipt.status !== "0x1") throw new Error("validator funding failed");
   const validatorFrames: Frame[] = [
-    { mode: "verify", flags: 2, target: null, gasLimit: 70_000n, value: 0n, data: "0x" },
+    { mode: "verify", flags: 2, target: null, gasLimit: 70_000n, stateGasLimit: 100_000n, value: 0n, data: "0x" },
     {
       mode: "verify",
       flags: 1,
       target: validator,
       gasLimit: 25_000n,
+      stateGasLimit: 100_000n,
       value: 0n,
       data: encodeFunctionData({ abi: validatorAbi, functionName: "validate" }),
     },
-    { mode: "sender", flags: 0, target: DEAD_ADDR, gasLimit: 30_000n, value: 0n, data: "0x" },
+    { mode: "sender", flags: 0, target: DEAD_ADDR, gasLimit: 30_000n, stateGasLimit: 500_000n, value: 0n, data: "0x" },
   ];
   const validatorTx = await buildRaw(publicClient, sender, nonceKey++, [finalReference], {
     frames: validatorFrames,
@@ -265,24 +280,33 @@ async function main() {
     "RootAnchoredValidator tuple mismatch rejection",
   );
 
-  const gasRuns: { count: number; gasUsed: bigint; calculated: bigint }[] = [];
+  // Receipt gas for a frame transaction (EIP-8037 / EIP-7976):
+  //   max(intrinsic + sum(frame execution gas used), floor) + sum(frame state gas used)
+  // The default frames here use little execution gas, so the EIP-7976 floor
+  // dominates as references are added; check the exact settled value.
+  const gasRuns: { count: number; gasUsed: bigint; intrinsic: bigint }[] = [];
   for (const count of [0, 1, 16]) {
     const refs = Array.from({ length: count }, () => finalReference);
     const built = await buildRaw(publicClient, sender, nonceKey++, refs);
     const receipt = await waitForReceipt(publicClient, await sendRaw(publicClient, built.raw));
-    gasRuns.push({
-      count,
-      gasUsed: BigInt(receipt.gasUsed),
-      calculated: getFrameTransactionGas(built.transaction),
-    });
+    const frameGas = (receipt.frameReceipts as any[]).map(frameGasUsed);
+    const executionUsed = frameGas.reduce((sum, gas) => sum + gas.execution, 0n);
+    const stateUsed = frameGas.reduce((sum, gas) => sum + gas.state, 0n);
+    const intrinsic = getFrameTransactionIntrinsicGas(built.transaction);
+    const floor = getFrameTransactionFloorDataGas(built.transaction);
+    const executionComponent = intrinsic + executionUsed;
+    const expected = (executionComponent > floor ? executionComponent : floor) + stateUsed;
+    if (BigInt(receipt.gasUsed) !== expected)
+      throw new Error(
+        `receipt gas for ${count} references: geth=${BigInt(receipt.gasUsed)} viem=${expected} (intrinsic=${intrinsic} floor=${floor} exec=${executionUsed} state=${stateUsed})`,
+      );
+    if (getFrameTransactionGas(built.transaction) < BigInt(receipt.gasUsed))
+      throw new Error(`declared total gas below receipt gas for ${count} references`);
+    gasRuns.push({ count, gasUsed: BigInt(receipt.gasUsed), intrinsic });
   }
-  for (const run of gasRuns.slice(1)) {
-    const actualDelta = run.gasUsed - gasRuns[0]!.gasUsed;
-    const calculatedDelta = run.calculated - gasRuns[0]!.calculated;
-    if (actualDelta !== calculatedDelta)
-      throw new Error(`reference gas delta for ${run.count}: geth=${actualDelta} viem=${calculatedDelta}`);
-  }
-  console.log("PASS geth/viem intrinsic gas deltas for 0, 1, and 16 references");
+  if (gasRuns[1]!.intrinsic - gasRuns[0]!.intrinsic <= 0n || gasRuns[2]!.intrinsic <= gasRuns[1]!.intrinsic)
+    throw new Error("intrinsic gas does not grow with reference count");
+  console.log("PASS geth/viem receipt gas for 0, 1, and 16 references");
 
   const { transaction: vector, sigHash, rawTransaction: expectedVectorRaw } =
     loadFrameTransactionVector();
@@ -294,9 +318,14 @@ async function main() {
     throw new Error(`geth/viem EIP-8272 raw transaction vector mismatch at ${mismatch}: ${vectorRaw}`);
   }
   const fields = fromRlp(`0x${vectorRaw.slice(4)}` as Hex, "hex") as any[];
-  fields.pop();
-  const legacyTenField = concatHex(["0x06", toRlp(fields as any)]);
-  await expectRejected(publicClient, legacyTenField, "legacy 10-field wire rejection");
+  if (fields.length !== 9) throw new Error(`frame tx wire has ${fields.length} fields, want 9`);
+  // Pre-Bogota layout: fees as three flat scalars (11 fields).
+  const flatFeeFields = [...fields.slice(0, 6), ...(fields[6] as any[]), ...fields.slice(7)];
+  const legacyFlatFee = concatHex(["0x06", toRlp(flatFeeFields as any)]);
+  await expectRejected(publicClient, legacyFlatFee, "legacy flat-fee 11-field wire rejection");
+  // Pre-EIP-8272 layout: no recent-root reference list (8 fields).
+  const legacyEightField = concatHex(["0x06", toRlp(fields.slice(0, 8) as any)]);
+  await expectRejected(publicClient, legacyEightField, "legacy 8-field wire rejection");
   console.log("PASS shared raw transaction and sig-hash vectors");
 
   const expiryPending = await buildRaw(publicClient, sender, nonceKey++, [finalReference], {
@@ -321,7 +350,7 @@ async function main() {
   });
   const reorgReference = makeRootReference({
     sourceId: computeSourceId(sender.address, reorgSalt),
-    slot: reorgWriteBlock.timestamp / secondsPerSlot,
+    slot: blockSlot(reorgWriteBlock, secondsPerSlot),
     root: reorgRoot,
   });
   await advanceTime(publicClient, secondsPerSlot);
