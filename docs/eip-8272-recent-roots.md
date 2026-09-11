@@ -4,7 +4,7 @@ EIP-8272 lets a frame transaction commit to application roots that were recorded
 
 ## Transaction Field
 
-The eleventh frame transaction field is:
+The final frame transaction field is:
 
 ```text
 recent_root_references = [[source_id, slot, root], ...]
@@ -43,7 +43,7 @@ Therefore a root written in slot `S` can first be referenced in `S+1`. Same-slot
 
 | Interface | Value |
 |---|---:|
-| `TXPARAM(0x10)` | reference count |
+| `TXPARAM(0x0F)` | reference count |
 | `RECENTROOTREFLOAD(0, index)` | source ID |
 | `RECENTROOTREFLOAD(1, index)` | zero-extended slot |
 | `RECENTROOTREFLOAD(2, index)` | root |
@@ -52,10 +52,10 @@ Therefore a root written in slot `S` can first be referenced in `S+1`. Same-slot
 
 ## Intrinsic Gas
 
-Reference RLP bytes participate in EIP-7623 calldata charging. When at least one reference is present, intrinsic gas also adds:
+Reference RLP bytes participate in calldata charging (4 gas per token, EIP-7976 floor of 16). When at least one reference is present, intrinsic gas also adds:
 
 ```text
-2,400 + 2,002 * len(recent_root_references)
+2,900 + 2,102 * len(recent_root_references)
 ```
 
 The viem helpers `computeSourceId`, `writeRecentRoot`, and `makeRootReference` build the canonical values. `FrameTxLib.recentRootRefLoad` and `RootAnchoredValidator` demonstrate validation-side introspection.

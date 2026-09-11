@@ -32,8 +32,6 @@ A reference implementation for [EIP-8141](https://github.com/ethereum/EIPs/pull/
 │   │       │   ├── handlers/                # ERC-1271 fallback handler
 │   │       │   ├── interfaces/              # Module interfaces (IValidator, IHook, IPolicy, ...)
 │   │       │   └── types/                   # Constants, Structs, Types
-│   │       ├── mldsa/                          # ML-DSA post-quantum account
-│   │       │   └── MLDSA8141Account.sol
 │   │       ├── coinbase-smart-wallet/          # Coinbase-style smart wallet
 │   │       │   ├── CoinbaseSmartWallet8141.sol
 │   │       │   └── CoinbaseSmartWalletFactory8141.sol
@@ -93,7 +91,7 @@ make test        # forge test -vv
 Start a local dev node with EIP-8141 support:
 
 ```bash
-make devnet        # starts geth --dev on port 18545
+make devnet        # starts geth --dev on port 18545 from devnet/genesis.json (Amsterdam + Bogota)
 make devnet-stop   # stops the dev node
 ```
 
@@ -104,10 +102,19 @@ The developer genesis installs the expiry verifier at `0x00000000000000000000000
 E2E tests run against the local devnet. Start the devnet first, then:
 
 ```bash
-make e2e                   # run all 21 E2E test suites against the current devnet
+make e2e                   # run all 20 E2E test suites against the current devnet (see note below)
 make e2e-phases            # run Phase 1, 2, and 3 on separate fresh devnets
 make benchmark             # gas benchmarks
 ```
+
+The devnet runs the `eip8141-benchmark` geth branch (go-ethereum v1.17.x, Amsterdam + Bogota at
+genesis). Frame gas is two-dimensional: every frame declares `gasLimit` (execution) and
+`stateGasLimit` (EIP-8037 state growth), and receipts report `gasUsed: { execution, state }`.
+`devnet/run.sh` raises the framepool's public validation caps with the explicit benchmark-policy
+flags so the example accounts are admitted; the release-validated suites are Phase 1-3 and the
+relayerless privacy pool (`make e2e-phases`, `scripts/run-privacy-pool-e2e.sh`). The legacy
+account suites (Kernel, Coinbase, LightAccount, Simple paymaster, negative, benchmark) predate
+the current validation policy and mempool tracer rules and are not part of release validation.
 
 Individual test targets:
 
@@ -129,9 +136,6 @@ make e2e-coinbase-webauthn # WebAuthn
 # LightAccount8141
 make e2e-light-account     # ECDSA
 
-# MLDSA8141Account (post-quantum)
-make e2e-mldsa             # ML-DSA signature verification
-
 # EOA Default Code
 make e2e-eoa               # all EOA tests
 make e2e-eoa-batching      # batch multiple calls
@@ -146,7 +150,7 @@ make e2e-negative-protocol # protocol constraint violations
 
 ## Shared Test Vector
 
-The canonical 11-field frame transaction fixture is
+The canonical nine-field frame transaction fixture is
 `.context/test-vectors/frame-transaction-v1.json`. Geth, viem, and the contracts E2E
 consume this fixture for the shared raw transaction, signature hash, and gas vector.
 The standalone submodule snapshots are generated artifacts. After changing the canonical

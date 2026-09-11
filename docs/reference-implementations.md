@@ -96,15 +96,11 @@ The canonical verifier is installed at `0x00000000000000000000000000000000000081
 
 VERIFY frames use the allowed-scope bitmask. Hook pre/post checks execute inside the SENDER call so hook and account state changes remain atomic.
 
-## MLDSA8141Account
-
-`contracts/src/example/mldsa/MLDSA8141Account.sol` demonstrates post-quantum validation through the ML-DSA-ETH precompile at `0x13`. It retains a bespoke frame-data signature flow for comparison with protocol transaction signatures.
-
 ## Client Libraries
 
 `viem-eip8141/src/eip8141/` provides:
 
-- strict eleven-field transaction and six-field frame serialization/parsing;
+- strict nine-field transaction and six-field frame serialization/parsing, with two-dimensional frame gas limits (`gasLimit`, `stateGasLimit`);
 - EIP-8250 keyed nonce lookup and automatic sequence preparation, with scalar `nonce` input promoted to `[0]`;
 - geth-compatible signature hashing;
 - LocalAccount, secp256k1 EOA, and Simple8141Account adapters; P256 is available to deployed smart-account validators, not protocol default code;

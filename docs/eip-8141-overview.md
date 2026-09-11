@@ -14,18 +14,18 @@ The typed payload is:
   sender,
   frames,
   signatures,
-  max_priority_fee_per_gas,
-  max_fee_per_gas,
-  max_fee_per_blob_gas,
+  [max_priority_fee_per_gas, max_fee_per_gas, max_fee_per_blob_gas],
   blob_versioned_hashes,
   recent_root_references
 ])
 ```
 
-Each frame has six fields:
+The three fee fields are a nested list, giving nine top-level fields. Blob-carrying frame transactions wrap this payload with the EIP-4844 sidecar (`[payload, blobs, commitments, proofs]` or the version-1 cell-proof form) on the network and RPC submission path.
+
+Each frame has six fields, with a two-dimensional gas limit (EIP-8037 execution and state gas):
 
 ```text
-[mode, flags, target, gas_limit, value, data]
+[mode, flags, target, [execution_gas_limit, state_gas_limit], value, data]
 ```
 
 Each transaction signature has four fields:
@@ -66,7 +66,7 @@ Supported schemes are ARBITRARY (`0`), secp256k1 (`1`), and P256 (`2`). The prot
 - Empty `msg` means the signature verifies the canonical transaction signature hash.
 - A non-empty `msg` must be exactly 32 bytes and cannot be all zero.
 
-The signature hash is `keccak256(typed_transaction)`, with only the raw signature bytes of empty-message signatures replaced by empty bytes. Frame data is not elided. `SIGPARAM` exposes protocol-signature metadata and can copy raw bytes only from ARBITRARY entries.
+The signature hash is `keccak256(typed_transaction)` over the same nine-field layout as the wire format, with only the raw signature bytes of empty-message signatures replaced by empty bytes. Frame data is not elided. `SIGPARAM` exposes protocol-signature metadata and can copy raw bytes only from ARBITRARY entries.
 
 ## Introspection Opcodes
 
@@ -82,24 +82,37 @@ The signature hash is `keccak256(typed_transaction)`, with only the raw signatur
 
 FRAMEPARAM status is available only for earlier frames and returns `0` for failure, `1` for success, and `2` for skipped execution.
 
-`TXPARAM(0x01)` returns `nonce_seq`; `0x0C` through `0x0F` expose the first nonce key, pre-state legacy nonce, key count, and key-set hash. `TXPARAM(0x10)` returns the recent-root reference count.
+`TXPARAM(0x01)` returns `nonce_seq`. `TXPARAM(0x0C)` returns the state gas remaining in the current frame. `0x0D` through `0x0F` expose the nonce key count, key-set hash, and recent-root reference count; `0x10` and `0x11` expose the first nonce key and the pre-state legacy nonce.
+
+`FRAMEPARAM(0x01)` returns a frame's execution gas limit and `0x09` its state gas limit. `0x0A` and `0x0B` return the execution and state gas used by an earlier frame.
 
 ## Gas Accounting
 
+Gas is two-dimensional after Amsterdam (EIP-8037): each frame declares an execution gas limit and a state gas limit, and state growth (new storage slots, account creation, code deposit) is charged against the state dimension at 1,530 gas per byte.
+
 ```text
-total_gas =
-    15,000
+fixed_gas =
+    12,000
   + 475 * len(frames)
-  + calldata7623(rlp(frames))
-  + calldata7623(rlp(signatures))
-  + calldata7623(rlp(recent_root_references))
+  + 100 * arbitrary_signature_count
   + 2,800 * secp256k1_signature_count
   + 6,700 * p256_signature_count
-  + (references > 0 ? 2,400 + 2,002 * references : 0)
-  + sum(frame.gas_limit)
+  + (references > 0 ? 2,900 + 2,102 * references : 0)
+  + 6,000 * value_transfer_frames   # EIP-2780; SENDER value to a non-self target
+
+calldata_tokens = zero_bytes + 4 * nonzero_bytes over
+    rlp(nonce_keys) || rlp(nonce_seq),
+    each frame.data,
+    each signature's signer || msg || signature,
+    rlp(recent_root_references)
+
+intrinsic_gas = fixed_gas + 4 * calldata_tokens
+floor_gas     = fixed_gas + 16 * calldata_tokens          # EIP-7976
+total_gas     = max(intrinsic_gas + sum(execution_gas_limit), floor_gas)
+              + sum(state_gas_limit)
 ```
 
-Unused frame gas, including gas assigned to skipped frames, is returned to the payer and block gas pool. `TXPARAM(0x06)` exposes the maximum transaction cost.
+`intrinsic_gas + sum(execution_gas_limit)` is capped at 16,777,216 (EIP-7825). Unused frame gas in both dimensions, including gas assigned to skipped frames, is returned to the payer and block gas pool. `TXPARAM(0x06)` exposes the maximum transaction cost.
 
 ## Atomic Batches
 
@@ -109,13 +122,13 @@ If a frame with atomic flag `0x04` fails, state changes from the linked batch ar
 |---:|---|
 | `0` | failed |
 | `1` | successful |
-| `3` | skipped by atomic rollback |
+| `2` | skipped by atomic rollback |
 
-The transaction receipt also includes the resolved `payer` and one `frameReceipts` entry per frame.
+The transaction receipt also includes the resolved `payer` and one `frameReceipts` entry per frame. Each frame receipt reports `gasUsed` as an object with `execution` and `state` components.
 
 ## Expiry Verifier
 
-Address `0x0000000000000000000000000000000000008141` is installed in genesis with the canonical expiry runtime. An expiry frame is a VERIFY frame with flags and value equal to zero and exactly eight bytes of big-endian deadline data. Only one expiry frame is allowed. Expired transactions are rejected and dropped during framepool revalidation.
+Address `0x0000000000000000000000000000000000008141` is installed in genesis with the canonical expiry runtime. An expiry frame is a VERIFY frame with flags, value, and state gas limit equal to zero and exactly eight bytes of big-endian deadline data. Only one expiry frame is allowed. Expired transactions are rejected and dropped during framepool revalidation.
 
 ## Paymasters
 
