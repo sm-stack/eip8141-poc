@@ -21,12 +21,17 @@ fi
 # genesis does not enable. Initialise a fresh ephemeral datadir from
 # devnet/genesis.json (Amsterdam + Bogota at timestamp 0) on every start.
 DATADIR="${DEVNET_DATADIR:-$(mktemp -d -t eip8141-devnet.XXXXXX)}"
+GETH_PID=""
 cleanup() {
+  if [ -n "$GETH_PID" ] && kill -0 "$GETH_PID" 2>/dev/null; then
+    kill -INT "$GETH_PID" 2>/dev/null || true
+    wait "$GETH_PID" 2>/dev/null || true
+  fi
   if [ -z "${DEVNET_DATADIR:-}" ]; then
     rm -rf "$DATADIR"
   fi
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 "$GETH_BIN" --datadir "$DATADIR" init "$GENESIS" >/dev/null 2>&1
 
@@ -51,4 +56,6 @@ echo "CanonicalPaymaster runtime hash: 0x6c30f5865065de960a498c71c875f58fc0817d3
   --framepool.maxstatedependentverifygas "${FRAMEPOOL_MAX_STATE_DEPENDENT_VERIFY_GAS:-1000000}" \
   --framepool.maxverifystategas "${FRAMEPOOL_MAX_VERIFY_STATE_GAS:-5000000}" \
   --verbosity 3 \
-  "$@"
+  "$@" &
+GETH_PID=$!
+wait "$GETH_PID"
