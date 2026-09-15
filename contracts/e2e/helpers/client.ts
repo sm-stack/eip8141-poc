@@ -41,17 +41,17 @@ export async function waitForReceipt(
   throw new Error(`Timeout waiting for receipt of ${hash}`);
 }
 
-export function createTestClients() {
+export function createTestClients(rpcUrl = RPC_URL) {
   const account = privateKeyToAccount(DEV_KEY);
   const devAddr = account.address;
   const publicClient = createPublicClient({
     chain: eip8141Devnet,
-    transport: http(RPC_URL),
+    transport: http(rpcUrl),
   }).extend(frameActions());
   const walletClient = createWalletClient({
     account,
     chain: eip8141Devnet,
-    transport: http(RPC_URL),
+    transport: http(rpcUrl),
   });
   return { account, publicClient, walletClient, devAddr };
 }

@@ -6,12 +6,12 @@ export RPC_URL="${RPC_URL:-http://127.0.0.1:18545}"
 DEVNET_HTTP_PORT="$(node -p 'new URL(process.argv[1]).port || "80"' "$RPC_URL")"
 # Exercise the public validation budgets for this pool, even though the
 # shared benchmark devnet uses larger defaults for other account examples.
-export FRAMEPOOL_MAX_VERIFY_GAS="${FRAMEPOOL_MAX_VERIFY_GAS:-250000}"
-export FRAMEPOOL_MAX_REVALIDATION_GAS="${FRAMEPOOL_MAX_REVALIDATION_GAS:-100000}"
-export FRAMEPOOL_MAX_STATE_DEPENDENT_VERIFY_GAS="${FRAMEPOOL_MAX_STATE_DEPENDENT_VERIFY_GAS:-250000}"
+export FRAMEPOOL_MAX_VERIFY_GAS="${FRAMEPOOL_MAX_VERIFY_GAS:-100000}"
+export FRAMEPOOL_MAX_REVALIDATION_GAS="${FRAMEPOOL_MAX_REVALIDATION_GAS:-48100}"
+export FRAMEPOOL_MAX_STATE_DEPENDENT_VERIFY_GAS="${FRAMEPOOL_MAX_STATE_DEPENDENT_VERIFY_GAS:-100000}"
 export FRAMEPOOL_MAX_VERIFY_STATE_GAS="${FRAMEPOOL_MAX_VERIFY_STATE_GAS:-500000}"
 DEVNET_PID=""
-DEVNET_LOG="$(mktemp -t eip8141-privacy-pool.XXXXXX.log)"
+DEVNET_LOG="$(mktemp -t eip8141-passkey.XXXXXX.log)"
 
 stop_devnet() {
   if [[ -n "$DEVNET_PID" ]] && kill -0 "$DEVNET_PID" 2>/dev/null; then
@@ -25,10 +25,10 @@ stop_devnet() {
 
 trap stop_devnet EXIT INT TERM
 
-echo "=== Privacy pool: preparing development artifacts ==="
-(cd "$ROOT_DIR/contracts" && npm run privacy:setup && forge build)
+echo "=== Passkey: compiling contracts ==="
+(cd "$ROOT_DIR/contracts" && forge build)
 
-echo "=== Privacy pool: starting fresh devnet ==="
+echo "=== Passkey: starting fresh devnet ==="
 if curl --fail --silent \
   -H 'content-type: application/json' \
   --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
@@ -62,9 +62,9 @@ if [[ "$ready" != true ]]; then
   exit 1
 fi
 
-(cd "$ROOT_DIR/contracts" && npx tsx e2e/privacy-pool/relayerless-withdrawal.ts) || {
+(cd "$ROOT_DIR/contracts" && npx tsx e2e/passkey/passkey.ts) || {
   tail -100 "$DEVNET_LOG" >&2
   exit 1
 }
 
-echo "=== Privacy pool: passed ==="
+echo "=== Passkey: passed ==="

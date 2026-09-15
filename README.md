@@ -83,7 +83,18 @@ Build and test the Solidity contracts (requires `build/bin/solc`):
 
 ```bash
 make contracts   # forge build
-make test        # forge test -vv
+make test        # local privacy circuit setup + proof tests + forge test -vv
+```
+
+## ETH privacy pool
+
+The privacy pool now uses a depth-20 Circom/Poseidon circuit and real Groth16
+verification. The pool is both sender and payer; the recipient needs no initial
+ETH. Read [the design, flow, accounting and development-key limitations](contracts/privacy-pool/README.md).
+
+```bash
+make privacy-test  # generate/cache LOCAL keys, test real proofs and Solidity
+make e2e-privacy   # build artifacts and test on an isolated fresh devnet
 ```
 
 ## Devnet
@@ -112,7 +123,9 @@ genesis). Frame gas is two-dimensional: every frame declares `gasLimit` (executi
 `stateGasLimit` (EIP-8037 state growth), and receipts report `gasUsed: { execution, state }`.
 `devnet/run.sh` raises the framepool's public validation caps with the explicit benchmark-policy
 flags so the example accounts are admitted; the release-validated suites are Phase 1-3 and the
-relayerless privacy pool (`make e2e-phases`, `scripts/run-privacy-pool-e2e.sh`). The legacy
+relayerless privacy pool (`make e2e-phases`, `scripts/run-privacy-pool-e2e.sh`). The privacy
+pool script overrides those benchmark defaults with public VERIFY/revalidation caps of
+250,000/100,000 gas. The legacy
 account suites (Kernel, Coinbase, LightAccount, Simple paymaster, negative, benchmark) predate
 the current validation policy and mempool tracer rules and are not part of release validation.
 
@@ -185,3 +198,9 @@ Run `make benchmark` against the local devnet to reproduce:
 This repository is a **proof-of-concept** for research and demonstration purposes only.
 It may contain bugs, incomplete features, and unaudited code.
 Do not deploy or use any part of this codebase in production or with real funds.
+
+### P-256 / WebAuthn account
+
+[Passkey account implementation and usage](contracts/passkey/README.md): a self-paying Solidity account with strict RP/origin/UV checks, owner rotation, optional delayed recovery and signature-first validation. Run `make passkey-test` or `RPC_URL=http://127.0.0.1:18546 make e2e-passkey`.
+
+[C13 SPHINCS⁻ account](contracts/sphincs/README.md): a self-paying Solidity account with PQ-authorized owner rotation and a specialized verifier. The local geth E2E exercises a 99,999 revalidation gas cap without native cache credit. This is experimental, nonstandard cryptography. Run `make sphincs-test` or `RPC_URL=http://127.0.0.1:18546 make e2e-sphincs`.

@@ -9,9 +9,15 @@ cbor_metadata = false
 optimizer = true
 optimizer_runs = 200
 via_ir = true
+fs_permissions = [{ access = "read", path = "./privacy-pool/build" }, { access = "read", path = "./sphincs/fixtures" }]
 
 [profile.default.optimizer_details]
 yul = true
 [profile.default.optimizer_details.yulDetails]
 # Remove UnusedStoreEliminator (S) to work around solc 0.8.33-develop Yul assertion bug
 optimizerSteps = "dhfoDgvulfnTUtnIfxa[r]EscLMVcul[j]Trpeulxa[r]cLgvifMCTUca[r]LsTFOtfDnca[r]IulcscCTUtgvifMx[scCTUt]TOntnfDIulgvifMjmul[jul]VcTOculjmul:fDnTOcmuO"
+
+[profile.sphincs]
+optimizer_runs = 10000
+out = "out-sphincs"
+cache_path = "cache-sphincs"

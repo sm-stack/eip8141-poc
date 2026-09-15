@@ -1,429 +1,166 @@
+import assert from "node:assert/strict";
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { encodeAbiParameters, encodeFunctionData, parseAbi, parseAbiParameters, parseEther, type Address, type Hex } from "viem";
+import { serializeFrameTransaction } from "viem/eip8141";
+import { createTestClients, waitForReceipt } from "../helpers/client.js";
+import { deployContract } from "../helpers/deploy.js";
 import {
-  encodeAbiParameters,
-  encodeFunctionData,
-  keccak256,
-  parseAbiParameters,
-  parseEther,
-  toHex,
-  type Address,
-  type Hex,
-} from "viem";
-import {
-  computeSourceId,
-  getFrameTransactionGas,
-  serializeFrameTransaction,
-  type Frame,
-  type TransactionSerializableFrame,
-} from "viem/eip8141";
-import { createTestClients, waitForReceipt, blockSlot } from "../helpers/client.js";
-import { deployContract, loadBytecode } from "../helpers/deploy.js";
+    CommitmentTree, MAX_GAS_CHARGE, VERIFY_GAS, buildDir, poolAbi, createNote,
+    proveWithdrawal, statementHash, settleGasCharge, buildWithdrawalTransaction,
+    nonceStorageSlot, verifyArtifacts,
+} from "../../privacy-pool/src/index.mjs";
 
-const denomination = parseEther("1");
-const maxGasCharge = parseEther("0.01");
-const verifyGasLimit = 400_000n;
-const executeGasLimit = 200_000n;
-const rootSalt = keccak256(toHex("privacy-pool-8141.root.v1"));
-const nullifierDomain = keccak256(toHex("privacy-pool-8141.nullifier.v1"));
-const withdrawalStatementTypeHash = keccak256(
-  toHex(
-    "WithdrawalStatement(uint256 chainId,address pool,bytes32 root,uint64 rootSlot,bytes32 nullifierHash,address recipient,uint64 nonceSeq,uint256 maxGasCharge)",
-  ),
-);
-
-const poolAbi = [
-  {
-    type: "function",
-    name: "deposit",
-    inputs: [{ name: "commitment", type: "bytes32" }],
-    outputs: [
-      { name: "leafIndex", type: "uint64" },
-      { name: "root", type: "bytes32" },
-    ],
-    stateMutability: "payable",
-  },
-  {
-    type: "function",
-    name: "currentRoot",
-    inputs: [],
-    outputs: [{ type: "bytes32" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "nullifierSpent",
-    inputs: [{ name: "nullifierHash", type: "bytes32" }],
-    outputs: [{ type: "bool" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "validateWithdrawal",
-    inputs: [
-      { name: "proof", type: "bytes" },
-      {
-        name: "intent",
-        type: "tuple",
-        components: [
-          { name: "root", type: "bytes32" },
-          { name: "rootSlot", type: "uint64" },
-          { name: "nullifierHash", type: "bytes32" },
-          { name: "recipient", type: "address" },
-          { name: "nonceSeq", type: "uint64" },
-          { name: "maxGasCharge", type: "uint256" },
-          { name: "gasCharge", type: "uint256" },
-          { name: "verifyGasLimit", type: "uint256" },
-          { name: "maxPriorityFeePerGas", type: "uint256" },
-          { name: "maxFeePerGas", type: "uint256" },
-        ],
-      },
-    ],
-    outputs: [],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "executeWithdrawal",
-    inputs: [
-      { name: "nullifierHash", type: "bytes32" },
-      { name: "recipient", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-] as const;
-
-type Intent = {
-  root: Hex;
-  rootSlot: bigint;
-  nullifierHash: Hex;
-  recipient: Address;
-  nonceSeq: bigint;
-  maxGasCharge: bigint;
-  gasCharge: bigint;
-  verifyGasLimit: bigint;
-  maxPriorityFeePerGas: bigint;
-  maxFeePerGas: bigint;
-};
-
-function nonceKey(nullifierHash: Hex): bigint {
-  const encoded = encodeAbiParameters(parseAbiParameters("bytes32, bytes32"), [
-    nullifierDomain,
-    nullifierHash,
-  ]);
-  const key = BigInt(keccak256(encoded));
-  return key === 0n ? 1n : key;
-}
-
-function withdrawalStatementHash(pool: Address, intent: Intent): Hex {
-  return keccak256(
-    encodeAbiParameters(
-      parseAbiParameters(
-        "bytes32, uint256, address, bytes32, uint64, bytes32, address, uint64, uint256",
-      ),
-      [
-        withdrawalStatementTypeHash,
-        1337n,
-        pool,
-        intent.root,
-        intent.rootSlot,
-        intent.nullifierHash,
-        intent.recipient,
-        intent.nonceSeq,
-        intent.maxGasCharge,
-      ],
-    ),
-  );
-}
-
-function proofForIntent(pool: Address, intent: Intent): Hex {
-  return encodeAbiParameters(parseAbiParameters("bytes32, bytes32, bytes32"), [
-    intent.root,
-    intent.nullifierHash,
-    withdrawalStatementHash(pool, intent),
-  ]);
-}
-
-function frames(
-  pool: Address,
-  proof: Hex,
-  intent: Intent,
-  executionGasLimit = executeGasLimit,
-): Frame[] {
-  return [
-    {
-      mode: "verify",
-      flags: 3,
-      target: null,
-      gasLimit: verifyGasLimit,
-      stateGasLimit: 100_000n,
-      value: 0n,
-      data: encodeFunctionData({
-        abi: poolAbi,
-        functionName: "validateWithdrawal",
-        args: [proof, intent],
-      }),
-    },
-    {
-      mode: "sender",
-      flags: 0,
-      target: null,
-      gasLimit: executionGasLimit,
-      stateGasLimit: 500_000n,
-      value: 0n,
-      data: encodeFunctionData({
-        abi: poolAbi,
-        functionName: "executeWithdrawal",
-        args: [intent.nullifierHash, intent.recipient, denomination - intent.gasCharge],
-      }),
-    },
-  ];
-}
-
-function buildTransaction(
-  pool: Address,
-  sourceId: Hex,
-  proof: Hex,
-  intent: Intent,
-  executionGasLimit = executeGasLimit,
-): TransactionSerializableFrame {
-  return {
-    type: "frame",
-    chainId: 1337,
-    nonceKeys: [nonceKey(intent.nullifierHash)],
-    nonceSeq: 0n,
-    sender: pool,
-    frames: frames(pool, proof, intent, executionGasLimit),
-    signatures: [],
-    recentRootReferences: [{ sourceId, slot: intent.rootSlot, root: intent.root }],
-    maxPriorityFeePerGas: intent.maxPriorityFeePerGas,
-    maxFeePerGas: intent.maxFeePerGas,
-  };
-}
+const D = parseEther("1");
+const nonceManager = "0x0000000000000000000000000000000000008250" as Address;
+const { publicClient, walletClient } = createTestClients(process.env.RPC_URL);
+const report: any = { developmentOnly: true, rpcUrl: process.env.RPC_URL ?? "http://localhost:18545", declaredVerifyGas: VERIFY_GAS,
+    configuredVerifyCap: process.env.FRAMEPOOL_MAX_VERIFY_GAS ?? "unspecified",
+    configuredRevalidationCap: process.env.FRAMEPOOL_MAX_REVALIDATION_GAS ?? "unspecified",
+    runs: [] };
+const artifact = (name: string) => JSON.parse(readFileSync(resolve(buildDir, `${name}.json`), "utf8"));
 
 async function main() {
-  const { publicClient, walletClient } = createTestClients();
+    verifyArtifacts();
+    const chainId = await publicClient.getChainId();
+    assert.equal(chainId, 1337, "This test is restricted to the local devnet");
+    const hasher = await deployContract(walletClient, publicClient, artifact("poseidon").bytecode, 3_000_000n, "Poseidon2");
+    const constructor = encodeAbiParameters(parseAbiParameters("address,uint256"), [hasher.address, D]);
 
-  const verifier = await deployContract(
-    walletClient,
-    publicClient,
-    loadBytecode("ProofBoundPrivacyPoolVerifier"),
-    300_000n,
-    "ProofBoundPrivacyPoolVerifier",
-  );
-  const constructorArgs = encodeAbiParameters(parseAbiParameters("address, uint256, uint8"), [
-    verifier.address,
-    denomination,
-    20,
-  ]);
-  const deployedPool = await deployContract(
-    walletClient,
-    publicClient,
-    `${loadBytecode("PrivacyPool8141")}${constructorArgs.slice(2)}` as Hex,
-    3_000_000n,
-    "PrivacyPool8141",
-  );
-
-  const commitment = keccak256(toHex("privacy-pool-note-1"));
-  const depositHash = await (walletClient as any).writeContract({
-    address: deployedPool.address,
-    abi: poolAbi,
-    functionName: "deposit",
-    args: [commitment],
-    value: denomination,
-  });
-  const depositReceipt = await waitForReceipt(publicClient, depositHash);
-  if (depositReceipt.status !== "0x1") throw new Error("deposit failed");
-  const depositBlock = await publicClient.getBlock({ blockNumber: BigInt(depositReceipt.blockNumber) });
-  const rootSlot = blockSlot(depositBlock);
-  const root = (await (publicClient as any).readContract({
-    address: deployedPool.address,
-    abi: poolAbi,
-    functionName: "currentRoot",
-  })) as Hex;
-  const sourceId = computeSourceId(deployedPool.address, rootSalt);
-  await (publicClient as any).request({ method: "dev_advanceTime", params: [toHex(12n)] });
-
-  const secondCommitment = keccak256(toHex("privacy-pool-note-2"));
-  const secondDepositHash = await (walletClient as any).writeContract({
-    address: deployedPool.address,
-    abi: poolAbi,
-    functionName: "deposit",
-    args: [secondCommitment],
-    value: denomination,
-  });
-  const secondDepositReceipt = await waitForReceipt(publicClient, secondDepositHash);
-  if (secondDepositReceipt.status !== "0x1") throw new Error("second deposit failed");
-  const secondDepositBlock = await publicClient.getBlock({
-    blockNumber: BigInt(secondDepositReceipt.blockNumber),
-  });
-  const secondRootSlot = blockSlot(secondDepositBlock);
-  const secondRoot = (await (publicClient as any).readContract({
-    address: deployedPool.address,
-    abi: poolAbi,
-    functionName: "currentRoot",
-  })) as Hex;
-  await (publicClient as any).request({ method: "dev_advanceTime", params: [toHex(12n)] });
-
-  const recipient = "0x000000000000000000000000000000000000bEEF" as Address;
-  const nullifierHash = keccak256(toHex("privacy-pool-nullifier-1"));
-  const fees = await publicClient.estimateFeesPerGas();
-  let intent: Intent = {
-    root,
-    rootSlot,
-    nullifierHash,
-    recipient,
-    nonceSeq: 0n,
-    maxGasCharge,
-    gasCharge: 0n,
-    verifyGasLimit,
-    maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
-    maxFeePerGas: fees.maxFeePerGas,
-  };
-  const proof = proofForIntent(deployedPool.address, intent);
-  intent = await settleGasCharge(deployedPool.address, sourceId, proof, intent, executeGasLimit);
-
-  const transaction = buildTransaction(deployedPool.address, sourceId, proof, intent);
-  const executionDataSize = (transaction.frames[1].data.length - 2) / 2;
-  if (executionDataSize !== 100) {
-    throw new Error(`execution calldata is ${executionDataSize} bytes, want 100`);
-  }
-
-  const invalidProof = "0x5678" as Hex;
-  const invalidProofIntent = await settleGasCharge(
-    deployedPool.address,
-    sourceId,
-    invalidProof,
-    { ...intent, gasCharge: 0n },
-    executeGasLimit,
-  );
-  await expectFrameTransactionRejected(
-    publicClient,
-    buildTransaction(deployedPool.address, sourceId, invalidProof, invalidProofIntent),
-    "invalid privacy proof",
-  );
-  console.log("PASS rejected invalid privacy proof");
-
-  for (const mutation of [
-    { label: "recipient mutation", intent: { ...intent, recipient: "0x000000000000000000000000000000000000b0b0" as Address } },
-    {
-      label: "root mutation",
-      intent: { ...intent, root: secondRoot, rootSlot: secondRootSlot },
-    },
-    {
-      label: "nullifier mutation",
-      intent: { ...intent, nullifierHash: keccak256(toHex("privacy-pool-nullifier-2")) },
-    },
-    {
-      label: "max gas charge mutation",
-      intent: { ...intent, maxGasCharge: intent.maxGasCharge + 1n },
-    },
-  ]) {
-    const mutatedIntent = await settleGasCharge(
-      deployedPool.address,
-      sourceId,
-      proof,
-      { ...mutation.intent, gasCharge: 0n },
-      executeGasLimit,
-    );
-    await expectFrameTransactionRejected(
-      publicClient,
-      buildTransaction(deployedPool.address, sourceId, proof, mutatedIntent),
-      mutation.label,
-    );
-  }
-  console.log("PASS proof binds recipient, root, nullifier, and max gas charge");
-
-  const underfunded = buildTransaction(
-    deployedPool.address,
-    sourceId,
-    proof,
-    await settleGasCharge(
-      deployedPool.address,
-      sourceId,
-      proof,
-      { ...intent, gasCharge: 0n },
-      executeGasLimit - 1n,
-    ),
-    executeGasLimit - 1n,
-  );
-  await expectFrameTransactionRejected(publicClient, underfunded, "underfunded execution frame");
-  console.log("PASS rejected execution frame below fixed 200000 gas limit");
-
-  const recipientBefore = await publicClient.getBalance({ address: recipient });
-  const raw = serializeFrameTransaction(transaction);
-  const hash = (await publicClient.request({
-    method: "eth_sendRawTransaction",
-    params: [raw],
-  })) as Hex;
-  const receipt = await waitForReceipt(publicClient, hash);
-  if (receipt.status !== "0x1") throw new Error(`withdrawal failed: ${hash}`);
-  if (receipt.payer?.toLowerCase() !== deployedPool.address.toLowerCase()) {
-    throw new Error(`pool was not recorded as payer: ${receipt.payer}`);
-  }
-
-  const recipientAfter = await publicClient.getBalance({ address: recipient });
-  if (recipientAfter - recipientBefore !== denomination - intent.gasCharge) {
-    throw new Error(
-      `recipient amount mismatch: got ${recipientAfter - recipientBefore}, want ${denomination - intent.gasCharge}`,
-    );
-  }
-  const spent = await (publicClient as any).readContract({
-    address: deployedPool.address,
-    abi: poolAbi,
-    functionName: "nullifierSpent",
-    args: [nullifierHash],
-  });
-  if (!spent) throw new Error("nullifier was not marked spent");
-
-  console.log(`PASS relayerless withdrawal: ${hash}`);
-  console.log("PASS execution calldata is 100 bytes");
-  console.log(`PASS pool paid gas and recipient received ${denomination - intent.gasCharge} wei`);
-}
-
-async function settleGasCharge(
-  pool: Address,
-  sourceId: Hex,
-  proof: Hex,
-  initialIntent: Intent,
-  executionGasLimit: bigint,
-): Promise<Intent> {
-  // gasCharge is part of the signed intent and therefore of the frame calldata,
-  // and calldata gas depends on zero/non-zero bytes, so the fixed point can
-  // cycle. Retry with a slightly different fee cap when that happens.
-  let intent = initialIntent;
-  for (let bump = 0n; bump < 64n; bump++) {
-    intent = { ...intent, gasCharge: 0n, maxFeePerGas: initialIntent.maxFeePerGas + bump };
-    const seen = new Set<bigint>();
-    for (let i = 0; i < 16; i++) {
-      const transaction = buildTransaction(pool, sourceId, proof, intent, executionGasLimit);
-      const gasCharge = getFrameTransactionGas(transaction) * intent.maxFeePerGas;
-      if (gasCharge === intent.gasCharge) return intent;
-      if (seen.has(gasCharge)) break;
-      seen.add(gasCharge);
-      intent = { ...intent, gasCharge };
+    for (const harness of [false, true]) {
+        const name = harness ? "DevelopmentPrivacyPoolDeliveryHarness" : "Groth16PrivacyPool8141";
+        const pool = await deployContract(walletClient, publicClient, `${artifact(harness ? "pool-harness" : "pool").bytecode}${constructor.slice(2)}` as Hex, 5_000_000n, name);
+        const tree = await CommitmentTree.create();
+        const notes = [await createNote(), await createNote()];
+        let oldPath: any;
+        for (let i = 0; i < notes.length; i++) {
+            const inserted = await tree.insert(notes[i].commitment);
+            const hash = await walletClient.writeContract({ address: pool.address, abi: poolAbi, functionName: "deposit", args: [notes[i].commitment], value: D });
+            assert.equal((await waitForReceipt(publicClient, hash)).status, "0x1");
+            assert.equal(await publicClient.readContract({ address: pool.address, abi: poolAbi, functionName: "currentRoot" }), inserted.root);
+            if (i === 0) oldPath = tree.path(0);
+        }
+        // Use the older root after another deposit: no recent-root system or
+        // next-slot wait is needed for append-only roots owned by tx.sender.
+        const recipient = harness
+            ? "0x000000000000000000000000000000000000ba02"
+            : "0x000000000000000000000000000000000000ba01";
+        const recipientBefore = await publicClient.getBalance({ address: recipient });
+        let actualFailedFee = 0n;
+        const attempts = harness ? 2 : 1;
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            const seqRaw = await publicClient.getStorageAt({ address: nonceManager, slot: nonceStorageSlot(pool.address, notes[0].nullifierHash) });
+            const nonceSeq = BigInt(seqRaw ?? "0x0");
+            assert.equal(nonceSeq, BigInt(attempt));
+            // A fixed authorization cap is not a gas-price guarantee. Wait
+            // for the fresh devnet's base fee to fit, rather than raising it.
+            let block = await publicClient.getBlock();
+            const feeDeadline = Date.now() + 60_000;
+            while ((block.baseFeePerGas ?? 0n) > MAX_GAS_CHARGE / 3_400_000n) {
+                if (Date.now() > feeDeadline) throw new Error("Devnet fee did not fit the 0.001 ETH cap");
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                block = await publicClient.getBlock();
+            }
+            const initial = { root: oldPath.root, nullifierHash: notes[0].nullifierHash, recipient,
+                nonceSeq, maxGasCharge: MAX_GAS_CHARGE, gasCharge: 0n, verifyGasLimit: VERIFY_GAS,
+                maxPriorityFeePerGas: 1n, maxFeePerGas: (block.baseFeePerGas ?? 1n) * 2n + 1n };
+            const context = statementHash(chainId, pool.address, D, initial);
+            assert.equal(await publicClient.readContract({ address: pool.address, abi: poolAbi, functionName: "withdrawStatementHash", args: [initial] }), context);
+            const result = await proveWithdrawal(notes[0], oldPath, context);
+            const intent = settleGasCharge(chainId, pool.address, result.encoded, initial, D);
+            const tx = buildWithdrawalTransaction(chainId, pool.address, result.encoded, intent);
+            if (!harness) {
+                const rejected: string[] = [];
+                const reject = async (candidate: any, label: string) => {
+                    const serialized = serializeFrameTransaction(candidate);
+                    await assert.rejects(
+                        () => publicClient.request({ method: "eth_sendRawTransaction", params: [serialized] }),
+                        /validation|revert|verify/i,
+                        label,
+                    );
+                    rejected.push(label);
+                };
+                const changedRecipient = settleGasCharge(chainId, pool.address, result.encoded,
+                    { ...initial, recipient: "0x000000000000000000000000000000000000ba03" }, D);
+                await reject(buildWithdrawalTransaction(chainId, pool.address, result.encoded, changedRecipient), "proof cannot redirect payout");
+                await reject({ ...tx, frames: [tx.frames[0], { ...tx.frames[1], data: "0x" }] }, "execution calldata is pinned");
+                for (const [offset, label] of [[0, "selector"], [4, "nullifier"], [36, "recipient padding"], [68, "nonce padding"], [100, "gas charge"]] as const) {
+                    const data = tx.frames[1].data;
+                    const at = 2 + offset * 2;
+                    const changed = (parseInt(data.slice(at, at + 2), 16) ^ 1).toString(16).padStart(2, "0");
+                    const mutation = `${data.slice(0, at)}${changed}${data.slice(at + 2)}`;
+                    await reject({ ...tx, frames: [tx.frames[0], { ...tx.frames[1], data: mutation }] }, `execution ${label} is pinned`);
+                }
+                await reject({ ...tx, frames: [tx.frames[0], { ...tx.frames[1], data: `${tx.frames[1].data}00` }] }, "trailing execution bytes rejected");
+                await reject({ ...tx, frames: [tx.frames[0], { ...tx.frames[1], stateGasLimit: 1n }] }, "execution state budget is pinned");
+                await reject({ ...tx, nonceKeys: [1n] }, "nullifier nonce key is pinned");
+                // Exercise every independently mutable frame budget/value/target
+                // in the branchless comparison groups (some also fail protocol gates).
+                for (const index of [0, 1]) {
+                    for (const [field, value] of [
+                        ['gasLimit', tx.frames[index].gasLimit - 1n],
+                        ['stateGasLimit', tx.frames[index].stateGasLimit - 1n],
+                        ['value', 1n],
+                        ['target', hasher.address],
+                    ] as const) {
+                        // The serializer itself prohibits VERIFY value and
+                        // execution approval at another target. Do not count
+                        // client-only failures as geth validation evidence.
+                        if (index === 0 && (field === 'value' || field === 'target')) continue;
+                        const frames = tx.frames.map((frame: any, i: number) => i === index ? { ...frame, [field]: value } : frame);
+                        await reject({ ...tx, frames }, `frame ${index} ${field} is pinned`);
+                    }
+                }
+                await reject({ ...tx, frames: [tx.frames[0]] }, "missing execution frame rejected");
+                await reject({ ...tx, frames: [...tx.frames, tx.frames[1]] }, "extra execution frame rejected");
+                await reject({ ...tx, frames: [{ ...tx.frames[0], flags: 1 }, tx.frames[1]] }, "verify approval flags are pinned");
+                await reject({ ...tx, frames: [tx.frames[0], { ...tx.frames[1], mode: 'default' }] }, "execution mode is pinned");
+                await reject({ ...tx, frames: [tx.frames[0], { ...tx.frames[1], flags: 1 }] }, "execution flags are pinned");
+                await reject({ ...tx, frames: tx.frames.map((frame: any) => ({ ...frame, gasLimit: frame.gasLimit ^ 1n })) }, "two equal-bit mismatches cannot cancel");
+                for (const field of ['gasCharge', 'verifyGasLimit', 'maxPriorityFeePerGas', 'maxFeePerGas'] as const) {
+                    const changedIntent = { ...intent, [field]: intent[field] + 1n };
+                    const data = encodeFunctionData({ abi: poolAbi, functionName: 'validateWithdrawal', args: [result.encoded, changedIntent] });
+                    await reject({ ...tx, frames: [{ ...tx.frames[0], data }, tx.frames[1]] }, `intent ${field} matches transaction`);
+                }
+                assert.equal(await publicClient.getBalance({ address: pool.address }), 2n * D, "rejected transactions spend no deposits");
+                report.rejections = rejected;
+                console.log(`PASS ${rejected.length} invalid withdrawals rejected before payment`);
+            }
+            const poolBefore = await publicClient.getBalance({ address: pool.address });
+            const hash = await publicClient.request({ method: "eth_sendRawTransaction", params: [serializeFrameTransaction(tx)] });
+            const receipt = await waitForReceipt(publicClient, hash);
+            assert.equal(receipt.payer.toLowerCase(), pool.address.toLowerCase());
+            assert.equal(receipt.frameReceipts[0].status, "0x1");
+            const actualFee = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice);
+            assert.ok(actualFee <= intent.gasCharge);
+            const spent = await publicClient.readContract({ address: pool.address, abi: poolAbi, functionName: "nullifierSpent", args: [notes[0].nullifierHash] });
+            const failed = harness && attempt === 0;
+            const poolAfter = await publicClient.getBalance({ address: pool.address });
+            if (failed) {
+                assert.equal(receipt.frameReceipts[1].status, "0x0");
+                assert.equal(spent, false);
+                assert.equal(poolBefore - poolAfter, actualFee);
+                assert.equal(await publicClient.getBalance({ address: recipient }), recipientBefore);
+                actualFailedFee = actualFee;
+                const enable = await walletClient.sendTransaction({ to: pool.address, data: encodeFunctionData({ abi: parseAbi(['function enableDelivery()']), functionName: 'enableDelivery' }) });
+                assert.equal((await waitForReceipt(publicClient, enable)).status, "0x1");
+            } else {
+                assert.equal(receipt.frameReceipts[1].status, "0x1");
+                assert.equal(spent, true);
+                const expectedPayout = D - nonceSeq * MAX_GAS_CHARGE - intent.gasCharge;
+                assert.equal((await publicClient.getBalance({ address: recipient })) - recipientBefore, expectedPayout);
+                assert.equal(poolBefore - poolAfter, expectedPayout + actualFee);
+                const expectedSurplus = nonceSeq * MAX_GAS_CHARGE - actualFailedFee + intent.gasCharge - actualFee;
+                assert.equal(poolAfter, D + expectedSurplus, "other note remains fully backed");
+            }
+            report.runs.push({ harness, attempt, hash, failed, provingMs: result.provingMs,
+                reservedWei: intent.gasCharge, actualFeeWei: actualFee, gasUsed: receipt.gasUsed,
+                effectiveGasPrice: receipt.effectiveGasPrice, proofBytes: (result.encoded.length - 2) / 2,
+                verifyExecutionGas: BigInt(receipt.frameReceipts[0].gasUsed.execution), frameReceipts: receipt.frameReceipts });
+            console.log(`PASS ${failed ? 'included delivery failure; note remains unspent' : 'real ZK ETH withdrawal'}: nonce=${nonceSeq}, prove=${result.provingMs}ms`);
+        }
     }
-  }
-  throw new Error("gasCharge did not converge");
+    writeFileSync(resolve(buildDir, 'e2e-report.json'), JSON.stringify(report, (_, value) => typeof value === 'bigint' ? value.toString() : value, 2));
+    console.log('PASS real proof, cross-language roots, pool payer, retry and reserve conservation');
 }
-
-async function expectFrameTransactionRejected(
-  publicClient: any,
-  transaction: TransactionSerializableFrame,
-  label: string,
-): Promise<void> {
-  try {
-    await publicClient.request({
-      method: "eth_sendRawTransaction",
-      params: [serializeFrameTransaction(transaction)],
-    });
-  } catch {
-    return;
-  }
-  throw new Error(`${label} was accepted`);
-}
-
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+main().then(() => process.exit(0)).catch(error => { console.error(error); process.exit(1); });

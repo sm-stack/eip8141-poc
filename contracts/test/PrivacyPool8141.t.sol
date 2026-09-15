@@ -2,217 +2,148 @@
 pragma solidity ^0.8.28;
 
 import {TestBase} from "./TestBase.sol";
-import {PrivacyPool8141} from "../src/example/PrivacyPool8141.sol";
-import {MockPrivacyPoolVerifier} from "../src/test-helpers/MockPrivacyPoolVerifier.sol";
+import {PrivacyPool8141, IPoseidon2} from "../src/example/PrivacyPool8141.sol";
+import {Groth16PrivacyPoolVerifier, IGroth16WithdrawalVerifier} from "../src/privacy/Groth16PrivacyPoolVerifier.sol";
 
 contract PrivacyPool8141Test is TestBase {
-    uint256 internal constant DENOMINATION = 1 ether;
-
-    MockPrivacyPoolVerifier internal verifier;
-    PrivacyPool8141 internal pool;
+    uint256 constant D = 1 ether;
+    PrivacyPool8141 pool;
+    Groth16PrivacyPoolVerifier verifier;
+    IPoseidon2 hasher;
+    string fixture;
 
     function setUp() public {
-        verifier = new MockPrivacyPoolVerifier();
-        pool = new PrivacyPool8141(verifier, DENOMINATION, 20);
+        fixture = vm.readFile("privacy-pool/build/fixture.json");
+        hasher = IPoseidon2(_deploy(vm.parseJsonBytes(vm.readFile("privacy-pool/build/poseidon.json"), ".bytecode")));
+        pool = PrivacyPool8141(
+            _deploy(
+                bytes.concat(
+                    vm.parseJsonBytes(vm.readFile("privacy-pool/build/pool.json"), ".bytecode"), abi.encode(hasher, D)
+                )
+            )
+        );
+        verifier = new Groth16PrivacyPoolVerifier(
+            IGroth16WithdrawalVerifier(
+                _deploy(vm.parseJsonBytes(vm.readFile("privacy-pool/build/internal-verifier.json"), ".bytecode"))
+            )
+        );
+        vm.deal(address(this), 20 ether);
     }
 
-    function test_constructorInitializesRootSourceAndEmptyTree() public {
-        assertEq(pool.denomination(), DENOMINATION);
-        assertEq(pool.levels(), 20);
-        assertEq(pool.EXECUTE_GAS_LIMIT(), 200_000);
-        assertEq(pool.rootSourceId(), keccak256(abi.encodePacked(address(pool), pool.ROOT_SALT())));
-        assertNotEq(pool.currentRoot(), bytes32(0));
+    function _deploy(bytes memory code) private returns (address target) {
+        assembly { target := create(0, add(code, 32), mload(code)) }
+        require(target != address(0), "fixture deployment failed");
     }
 
-    function test_constructorRejectsInvalidConfiguration() public {
-        vm.expectRevert(PrivacyPool8141.InvalidVerifier.selector);
-        new PrivacyPool8141(MockPrivacyPoolVerifier(address(1)), DENOMINATION, 20);
-
-        vm.expectRevert(PrivacyPool8141.InvalidDenomination.selector);
-        new PrivacyPool8141(verifier, 0, 20);
-
-        vm.expectRevert(PrivacyPool8141.InvalidTreeLevels.selector);
-        new PrivacyPool8141(verifier, DENOMINATION, 0);
-
-        vm.expectRevert(PrivacyPool8141.InvalidTreeLevels.selector);
-        new PrivacyPool8141(verifier, DENOMINATION, 33);
+    function testFuzz_statementAndNonceHashesMatchAbiEncoding(
+        PrivacyPool8141.WithdrawalIntent memory intent
+    ) public {
+        bytes32 expected = keccak256(abi.encode(
+            pool.WITHDRAW_STATEMENT_TYPEHASH(), block.chainid, address(pool), D,
+            intent.root, intent.nullifierHash, intent.recipient, intent.nonceSeq, intent.maxGasCharge
+        ));
+        assertEq(pool.withdrawStatementHash(intent), expected);
+        uint256 key = uint256(keccak256(abi.encode(pool.NULLIFIER_DOMAIN(), intent.nullifierHash)));
+        if (key == 0) key = 1;
+        assertEq(pool.nullifierNonceKey(intent.nullifierHash), key);
+        assertEq(pool.nullifierNonceKeysHash(intent.nullifierHash), keccak256(abi.encode(uint256(1), key)));
     }
 
-    function test_depositInsertsCommitmentAndPublishesRoot() public {
-        bytes32 commitment = keccak256("note-1");
-        bytes32 previousRoot = pool.currentRoot();
-
-        vm.expectEmit(true, true, false, false, address(pool));
-        emit PrivacyPool8141.Deposit(commitment, 0, bytes32(0));
-        (uint64 leafIndex, bytes32 root) = pool.deposit{value: DENOMINATION}(commitment);
-
-        assertEq(leafIndex, 0);
-        assertEq(root, pool.currentRoot());
-        assertNotEq(root, previousRoot);
-        assertEq(pool.nextLeafIndex(), 1);
-        assertTrue(pool.commitments(commitment));
-        assertEq(address(pool).balance, DENOMINATION);
+    function test_realGroth16ProofAndReducedContext() public {
+        bytes memory proof = vm.parseJsonBytes(fixture, ".proof");
+        bytes32 root = vm.parseJsonBytes32(fixture, ".root");
+        bytes32 nf = vm.parseJsonBytes32(fixture, ".nullifierHash");
+        bytes32 context = vm.parseJsonBytes32(fixture, ".context");
+        assertTrue(verifier.verifyProof(proof, root, nf, context));
+        assertFalse(verifier.verifyProof(proof, root, nf, bytes32(uint256(context) + 1)));
+        assertFalse(verifier.verifyProof(proof, root, nf, bytes32(uint256(context) ^ (uint256(1) << 255))));
+        assertFalse(verifier.verifyProof(hex"00", root, nf, context));
+        assertFalse(verifier.verifyProof(proof, bytes32(pool.FIELD()), nf, context));
+        assertFalse(verifier.verifyProof(proof, root, bytes32(pool.FIELD()), context));
+        assertFalse(verifier.verifyProof(bytes.concat(proof, bytes32(0)), root, nf, context));
     }
 
-    function test_depositRejectsWrongValueAndDuplicateCommitment() public {
-        bytes32 commitment = keccak256("note-1");
+    function test_poseidonTreeMatchesCircuitAndSdkAtEveryInsertion() public {
+        bytes32[] memory leaves = vm.parseJsonBytes32Array(fixture, ".commitments");
+        bytes32[] memory roots = vm.parseJsonBytes32Array(fixture, ".roots");
+        assertFalse(pool.acceptedRoots(pool.currentRoot()));
+        for (uint256 i; i < leaves.length; ++i) {
+            (uint64 index, bytes32 root) = pool.deposit{value: D}(leaves[i]);
+            assertEq(index, i);
+            assertEq(root, roots[i]);
+            assertTrue(pool.acceptedRoots(root));
+        }
+        assertTrue(pool.acceptedRoots(roots[0]));
+        assertEq(address(pool).balance, leaves.length * D);
+    }
 
+    function test_depositRejectsNoncanonicalAndDuplicateLeaves() public {
+        uint256 field = pool.FIELD();
         vm.expectRevert(PrivacyPool8141.InvalidDepositValue.selector);
-        pool.deposit{value: DENOMINATION - 1}(commitment);
-
-        pool.deposit{value: DENOMINATION}(commitment);
+        pool.deposit{value: 1}(bytes32(uint256(1)));
+        vm.expectRevert(PrivacyPool8141.InvalidCommitment.selector);
+        pool.deposit{value: D}(bytes32(field));
+        vm.expectRevert(PrivacyPool8141.InvalidCommitment.selector);
+        pool.deposit{value: D}(0);
+        pool.deposit{value: D}(bytes32(uint256(1)));
         vm.expectRevert(PrivacyPool8141.DuplicateCommitment.selector);
-        pool.deposit{value: DENOMINATION}(commitment);
+        pool.deposit{value: D}(bytes32(uint256(1)));
     }
 
-    function test_depositRevertsAtomicallyWhenRootPublicationFails() public {
-        bytes32 commitment = keccak256("note-1");
-        vm.etch(address(0x8272), hex"60006000fd");
-
-        vm.expectRevert(PrivacyPool8141.RootPublicationFailed.selector);
-        pool.deposit{value: DENOMINATION}(commitment);
-
-        assertEq(pool.nextLeafIndex(), 0);
-        assertFalse(pool.commitments(commitment));
-        assertEq(address(pool).balance, 0);
-    }
-
-    function test_depositRejectsWhenTreeIsFull() public {
-        PrivacyPool8141 smallPool = new PrivacyPool8141(verifier, DENOMINATION, 1);
-        smallPool.deposit{value: DENOMINATION}(keccak256("note-1"));
-        smallPool.deposit{value: DENOMINATION}(keccak256("note-2"));
-
-        vm.expectRevert(PrivacyPool8141.TreeFull.selector);
-        smallPool.deposit{value: DENOMINATION}(keccak256("note-3"));
-    }
-
-    function test_executeWithdrawalPaysRecipientWithoutCallingIt() public {
+    function test_retryChargesPriorAttemptCapWithoutChargingOtherNotes() public {
+        uint256 currentCharge = 0.0002 ether;
+        uint256 payout = pool.withdrawalAmount(2, currentCharge);
+        assertEq(payout, D - 0.002 ether - currentCharge);
+        vm.deal(address(pool), 2 * D - 0.002 ether - currentCharge);
         RejectEther recipient = new RejectEther();
-        PrivacyPool8141.WithdrawalIntent memory intent = _intent(address(recipient), 0.12 ether);
-
-        vm.deal(address(pool), DENOMINATION - intent.gasCharge);
+        bytes32 nf = bytes32(uint256(7));
         vm.prank(address(pool));
-        pool.executeWithdrawal(intent.nullifierHash, intent.recipient, DENOMINATION - intent.gasCharge);
-
-        assertTrue(pool.nullifierSpent(intent.nullifierHash));
-        assertEq(address(recipient).balance, DENOMINATION - intent.gasCharge);
-        assertEq(address(pool).balance, 0);
-    }
-
-    function test_executeWithdrawalRejectsReplay() public {
-        PrivacyPool8141.WithdrawalIntent memory intent = _intent(makeAddr("recipient"), 0.1 ether);
-        vm.deal(address(pool), 2 ether);
-
-        vm.prank(address(pool));
-        pool.executeWithdrawal(intent.nullifierHash, intent.recipient, DENOMINATION - intent.gasCharge);
-
+        pool.executeWithdrawal(nf, address(recipient), 2, currentCharge);
+        assertEq(address(recipient).balance, payout);
+        assertEq(address(pool).balance, D);
+        assertTrue(pool.nullifierSpent(nf));
         vm.prank(address(pool));
         vm.expectRevert(PrivacyPool8141.NullifierAlreadySpent.selector);
-        pool.executeWithdrawal(intent.nullifierHash, intent.recipient, DENOMINATION - intent.gasCharge);
+        pool.executeWithdrawal(nf, address(recipient), 2, currentCharge);
     }
 
-    function test_executeWithdrawalRejectsExternalCallerAndExcessiveGasCharge() public {
-        PrivacyPool8141.WithdrawalIntent memory intent = _intent(makeAddr("recipient"), 0.1 ether);
-        vm.expectRevert(PrivacyPool8141.InvalidCaller.selector);
-        pool.executeWithdrawal(intent.nullifierHash, intent.recipient, DENOMINATION - intent.gasCharge);
-
-        vm.prank(address(pool));
+    function test_retryBudgetAndCallerGuards() public {
+        uint256 cap = pool.MAX_GAS_CHARGE();
+        vm.expectRevert(PrivacyPool8141.RetryBudgetExhausted.selector);
+        pool.withdrawalAmount(1000, 1);
         vm.expectRevert(PrivacyPool8141.GasChargeTooHigh.selector);
-        pool.executeWithdrawal(intent.nullifierHash, intent.recipient, 0);
+        pool.withdrawalAmount(0, cap + 1);
+        vm.expectRevert(PrivacyPool8141.InvalidCaller.selector);
+        pool.executeWithdrawal(0, address(1), 0, 1);
+        PrivacyPool8141.WithdrawalIntent memory intent;
+        vm.expectRevert(PrivacyPool8141.InvalidCaller.selector);
+        pool.validateWithdrawal(hex"", intent);
     }
 
-    function test_nullifierNonceDomainIsDeterministicAndNonzero() public {
-        bytes32 nullifierHash = keccak256("nullifier");
-        uint256 key = pool.nullifierNonceKey(nullifierHash);
-        assertNotEq(key, 0);
-        assertEq(pool.nullifierNonceKeysHash(nullifierHash), keccak256(abi.encode(uint256(1), key)));
-    }
-
-    function test_statementHashBindsAuthorizationButNotExactGasTerms() public {
-        PrivacyPool8141.WithdrawalIntent memory first = _intent(makeAddr("alice"), 0.1 ether);
-        PrivacyPool8141.WithdrawalIntent memory second = _intent(makeAddr("bob"), 0.1 ether);
-        assertNotEq(pool.withdrawStatementHash(first), pool.withdrawStatementHash(second));
-
-        second = _intent(first.recipient, first.gasCharge);
-        second.maxGasCharge += 1;
-        assertNotEq(pool.withdrawStatementHash(first), pool.withdrawStatementHash(second));
-
-        second = _intent(first.recipient, first.gasCharge + 1);
-        second.maxPriorityFeePerGas += 1;
-        second.maxFeePerGas += 1;
-        assertEq(pool.withdrawStatementHash(first), pool.withdrawStatementHash(second));
-
-        bytes32 original = pool.withdrawStatementHash(first);
+    function test_statementBindsRetryAndDeploymentButAllowsFeeEstimation() public {
+        PrivacyPool8141.WithdrawalIntent memory intent;
+        intent.recipient = address(123);
+        intent.maxGasCharge = pool.MAX_GAS_CHARGE();
+        bytes32 h = pool.withdrawStatementHash(intent);
+        intent.gasCharge = 100;
+        assertEq(h, pool.withdrawStatementHash(intent));
+        intent.nonceSeq = 1;
+        assertNotEq(h, pool.withdrawStatementHash(intent));
+        intent.nonceSeq = 0;
         vm.chainId(block.chainid + 1);
-        assertNotEq(pool.withdrawStatementHash(first), original);
+        assertNotEq(h, pool.withdrawStatementHash(intent));
     }
 
-    function test_validateWithdrawalRejectsNonEntryPointBeforeFrameOpcodes() public {
-        PrivacyPool8141.WithdrawalIntent memory intent = _intent(makeAddr("recipient"), 0.1 ether);
-        vm.expectRevert(PrivacyPool8141.InvalidCaller.selector);
-        pool.validateWithdrawal(hex"1234", intent);
-    }
-
-    function test_validateWithdrawalRejectsExecutionFailuresBeforeApproval() public {
-        PrivacyPool8141.WithdrawalIntent memory intent = _intent(address(0), 0.1 ether);
-        vm.prank(address(0xAA));
-        vm.expectRevert(PrivacyPool8141.InvalidRecipient.selector);
-        pool.validateWithdrawal(hex"1234", intent);
-
-        intent.recipient = makeAddr("recipient");
-        intent.maxGasCharge = 0;
-        vm.prank(address(0xAA));
-        vm.expectRevert(PrivacyPool8141.GasChargeTooHigh.selector);
-        pool.validateWithdrawal(hex"1234", intent);
-
-        intent.maxGasCharge = DENOMINATION;
-        vm.prank(address(0xAA));
-        vm.expectRevert(PrivacyPool8141.GasChargeTooHigh.selector);
-        pool.validateWithdrawal(hex"1234", intent);
-
-        intent.maxGasCharge = 0.2 ether;
-        intent.gasCharge = 0;
-        vm.prank(address(0xAA));
-        vm.expectRevert(PrivacyPool8141.GasChargeTooHigh.selector);
-        pool.validateWithdrawal(hex"1234", intent);
-
-        intent.gasCharge = DENOMINATION;
-        vm.prank(address(0xAA));
-        vm.expectRevert(PrivacyPool8141.GasChargeTooHigh.selector);
-        pool.validateWithdrawal(hex"1234", intent);
-
-        intent.gasCharge = 0.1 ether;
-        vm.deal(address(pool), DENOMINATION);
-        vm.prank(address(pool));
-        pool.executeWithdrawal(intent.nullifierHash, intent.recipient, DENOMINATION - intent.gasCharge);
-
-        vm.prank(address(0xAA));
-        vm.expectRevert(PrivacyPool8141.NullifierAlreadySpent.selector);
-        pool.validateWithdrawal(hex"1234", intent);
-    }
-
-    function _intent(address recipient, uint256 gasCharge)
-        private
-        view
-        returns (PrivacyPool8141.WithdrawalIntent memory intent)
-    {
-        intent = PrivacyPool8141.WithdrawalIntent({
-            root: pool.currentRoot(),
-            rootSlot: 7,
-            nullifierHash: keccak256("nullifier"),
-            recipient: recipient,
-            nonceSeq: 0,
-            maxGasCharge: 0.2 ether,
-            gasCharge: gasCharge,
-            verifyGasLimit: 400_000,
-            maxPriorityFeePerGas: 1 gwei,
-            maxFeePerGas: 2 gwei
-        });
+    function testFuzz_retryConservation(uint64 sequence, uint256 charge) public {
+        sequence = uint64(sequence % 999);
+        charge = 1 + (charge % pool.MAX_GAS_CHARGE());
+        uint256 amount = pool.withdrawalAmount(sequence, charge);
+        assertEq(amount + uint256(sequence) * pool.MAX_GAS_CHARGE() + charge, D);
     }
 }
 
 contract RejectEther {
     receive() external payable {
-        revert();
+        revert("reject callbacks");
     }
 }

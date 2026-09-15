@@ -25,3 +25,10 @@
 .context/*
 !.context/test-vectors/
 !.context/test-vectors/**
+
+# Local privacy circuit setup and proving artifacts
+/contracts/privacy-pool/build/
+
+/contracts/sphincs/vendor/signer-wasm/target/
+/contracts/out-sphincs/
+/contracts/cache-sphincs/

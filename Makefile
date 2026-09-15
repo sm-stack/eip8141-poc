@@ -1,6 +1,6 @@
 .PHONY: build build-geth build-solc build-viem submodules install-deps vectors-check \
        clean clean-geth clean-solc clean-viem \
-       contracts test devnet devnet-stop \
+       contracts test privacy-setup privacy-test e2e-privacy passkey-test e2e-passkey sphincs-test e2e-sphincs devnet devnet-stop \
        e2e e2e-simple e2e-kernel e2e-kernel-validator e2e-hooked \
        e2e-coinbase-ecdsa e2e-coinbase-webauthn e2e-light-account \
        e2e-negative-mempool e2e-negative-protocol e2e-negative \
@@ -45,8 +45,29 @@ build-viem:
 contracts:
 	cd contracts && forge build
 
-test:
+privacy-setup:
+	cd contracts && npm run privacy:setup
+
+privacy-test: privacy-setup
+	cd contracts && npm run passkey:check && npm run passkey:test
+	cd contracts && npm run privacy:test
+	cd contracts && forge test --match-contract PrivacyPool8141Test -vv
+
+e2e-privacy:
+	bash scripts/run-privacy-pool-e2e.sh
+
+test: privacy-setup
+	cd contracts && npm run passkey:check && npm run passkey:test
+	cd contracts && npm run privacy:test
 	cd contracts && forge test -vv
+	$(MAKE) sphincs-test
+
+passkey-test:
+	cd contracts && npm run passkey:check && npm run passkey:test
+	cd contracts && forge test --match-path test/PasskeyAccount8141.t.sol -vv
+
+e2e-passkey:
+	bash scripts/run-passkey-e2e.sh
 
 devnet:
 	bash devnet/run.sh
@@ -125,3 +146,13 @@ clean-solc:
 
 clean-viem:
 	cd viem-eip8141 && pnpm clean
+
+# C13 uses a separate optimizer profile and output directory.
+sphincs-test:
+	python3 contracts/sphincs/generate-verifier.py --check
+	python3 contracts/sphincs/test-generator.py
+	cd contracts && npm run sphincs:check && npm run sphincs:test
+	cd contracts && FOUNDRY_PROFILE=sphincs forge test --match-contract C13Account8141Test
+
+e2e-sphincs:
+	bash scripts/run-sphincs-e2e.sh

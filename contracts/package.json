@@ -3,15 +3,36 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "send-frame-tx": "tsx script/send_frame_tx.ts"
+    "send-frame-tx": "tsx script/send_frame_tx.ts",
+    "privacy:setup": "node privacy-pool/scripts/setup.mjs --development-only",
+    "privacy:test": "node --test privacy-pool/test/*.test.mjs",
+    "privacy:e2e": "tsx e2e/privacy-pool/relayerless-withdrawal.ts",
+    "passkey:test": "tsx --test passkey/sdk.test.ts",
+    "passkey:check": "tsc --noEmit -p passkey/tsconfig.json",
+    "passkey:e2e": "tsx e2e/passkey/passkey.ts",
+    "sphincs:test": "tsx --test sphincs/sdk.test.ts",
+    "sphincs:check": "tsc --noEmit -p sphincs/tsconfig.json",
+    "sphincs:e2e": "tsx e2e/sphincs/sphincs.ts"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
+    "circom2": "0.2.23",
+    "circomlib": "2.0.5",
+    "circomlibjs": "0.1.7",
+    "snarkjs": "0.7.6",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   },
   "dependencies": {
     "@noble/curves": "^1.4.0",
     "viem": "file:../viem-eip8141/src"
+  },
+  "overrides": {
+    "@ethersproject/providers": {
+      "ws": "8.21.0"
+    },
+    "jsonpath": {
+      "underscore": "1.13.8"
+    }
   }
 }

@@ -1,0 +1,20 @@
+{
+  "upstream": "https://github.com/nconsigny/SPHINCS-",
+  "revision": "55b2f3e25d8d7cc0df33ccdb13becca1a168b26f",
+  "note": "Verifier and Rust signer vendored unmodified. Generated optimized verifier is derived separately. Test keys are public; no production key custody.",
+  "sha256": {
+    "vendor/LICENSE": "1fac85677077fad8b0295be4c6930cab03bfc5ca898897ad2eb4848693a584eb",
+    "vendor/SphincsC13Reference.sol": "fec5a9f19b202ab7aab6d7fcc3cd0a2b2e375edb943c62a569b3bb3e48ecdd16",
+    "vendor/signer-wasm/Cargo.lock": "548af7a13ad770124790df844fbd9aee8e64ff364192c08c58f9868e79e082b5",
+    "vendor/signer-wasm/Cargo.toml": "435fbae30e2397f3d2c3d30ff690eb5805e1983ae458a6e21e6975bb802e7a3f",
+    "vendor/signer-wasm/src/bin/signer_c13.rs": "56aa1fa2a765d70247496c40cc3a8409a1748d02f9f125bf8d9b8b0aba2a5fbd",
+    "vendor/signer-wasm/src/fors.rs": "f2b180435bbc636dd1806d011f209853a5e3ea6c17ed2117d7e7a0805d3d3a0c",
+    "vendor/signer-wasm/src/hash.rs": "2ed928eb843b38178f6143a57a0d0cf49aaee38e082f7d704cc5e96acacb7941",
+    "vendor/signer-wasm/src/keygen.rs": "313ee75e5ee0af7db49d19043d6f655ffd41b562aa43d3f54756a2fd045c0ac1",
+    "vendor/signer-wasm/src/lib.rs": "94780f10ab4292cd9c7c8e1c45f700ee064f0cc93702ca253a16c852b1d73aa3",
+    "vendor/signer-wasm/src/merkle.rs": "397e09d42161088d8df50b768f301d381da8235e311106180c201967419736cc",
+    "vendor/signer-wasm/src/params.rs": "ecfabb2fd53ef87243c97db40f163c3485091b0fb621d7f88be1dd05a7d3e027",
+    "vendor/signer-wasm/src/sphincs.rs": "9cbfe36d48a91b34e82c4849295b8d285fa3eaa2dff1b1da068b86a634c97282",
+    "vendor/signer-wasm/src/wots.rs": "e3bd3124c5dd65082ce4300c660d3b2f9dc0e5cacc3b042abdb19cee9a6d5195"
+  }
+}
