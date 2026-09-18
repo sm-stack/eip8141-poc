@@ -40,10 +40,13 @@ Bogota registers the following opcodes (the Solidity fork gates them on `evm_ver
 | `0xB2` | FRAMEDATACOPY | copy plus memory expansion |
 | `0xB3` | FRAMEPARAM | base |
 | `0xB4` | SIGPARAM | base |
-| `0xB5` | RECENTROOTREFLOAD | very low |
+| `0xB5` | SIGDATACOPY | copy plus memory expansion, as `CALLDATACOPY` |
+| `0xB6` | RECENTROOTREFLOAD | very low |
 | `0xAA` | APPROVE | terminating |
 
-Removed opcodes `TXPARAMLOAD`, `TXPARAMSIZE`, and `TXPARAMCOPY` are not accepted. The Solidity fork exposes `txparam`, `framedataload`, `framedatacopy`, `frameparam`, `sigparam`, `recentrootrefload`, and `approve` as Yul builtins.
+Removed opcodes `TXPARAMLOAD`, `TXPARAMSIZE`, and `TXPARAMCOPY` are not accepted. The Solidity fork exposes `txparam`, `framedataload`, `framedatacopy`, `frameparam`, `sigparam`, `sigdatacopy`, `recentrootrefload`, and `approve` as Yul builtins.
+
+`SIGDATACOPY` copies the raw bytes of an `ARBITRARY` signature entry and halts for protocol-validated schemes. `SIGPARAM(0x03)` (signature length) is likewise defined for `ARBITRARY` entries only, so neither the bytes nor the length of a protocol-validated signature are visible to the EVM. EIP-8141 assigns `0xB5` to `SIGDATACOPY`; `RECENTROOTREFLOAD` is local to this proof of concept (the current EIP-8272 draft defines no opcode) and therefore sits at `0xB6`. The default code charges no execution gas beyond the frame-entry target access.
 
 `TXPARAM` selectors: `0x00` type, `0x01` nonce sequence, `0x02` sender, `0x03`-`0x05` fee caps, `0x06` max cost, `0x07` blob hash count, `0x08` signature hash, `0x09` frame count, `0x0A` frame index, `0x0B` signature count, `0x0C` state gas left, `0x0D` nonce key count, `0x0E` nonce keys hash, `0x0F` recent-root reference count, `0x10` first nonce key, `0x11` legacy nonce. `FRAMEPARAM` adds `0x09` state gas limit, `0x0A` execution gas used, and `0x0B` state gas used. A failing `APPROVE` (bad scope, wrong caller) reverts instead of raising an invalid-opcode error.
 

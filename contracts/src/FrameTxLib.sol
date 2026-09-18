@@ -60,12 +60,13 @@ library FrameTxLib {
     uint8 internal constant SIG_PARAM_SIGNER = 0x00;
     uint8 internal constant SIG_PARAM_SCHEME = 0x01;
     uint8 internal constant SIG_PARAM_MSG = 0x02;
-	uint8 internal constant SIG_PARAM_SIGNATURE_LENGTH = 0x03;
-	uint8 internal constant SIG_PARAM_SIGNATURE = 0x04;
+    /// @dev Defined for ARBITRARY entries only. Protocol-validated signature
+    ///      bytes, including their length, are not introspectable.
+    uint8 internal constant SIG_PARAM_SIGNATURE_LENGTH = 0x03;
 
-	uint8 internal constant SIGNATURE_SCHEME_ARBITRARY = 0x00;
-	uint8 internal constant SIGNATURE_SCHEME_SECP256K1 = 0x01;
-	uint8 internal constant SIGNATURE_SCHEME_P256 = 0x02;
+    uint8 internal constant SIGNATURE_SCHEME_ARBITRARY = 0x00;
+    uint8 internal constant SIGNATURE_SCHEME_SECP256K1 = 0x01;
+    uint8 internal constant SIGNATURE_SCHEME_P256 = 0x02;
 
     /// @notice APPROVE with return data from memory.
     function approveWithData(bytes memory data, uint8 scope) internal pure {
@@ -113,6 +114,17 @@ library FrameTxLib {
     function sigParam(uint256 param, uint256 signatureIndex) internal pure returns (bytes32 result) {
         assembly {
             result := sigparam(param, signatureIndex)
+        }
+    }
+
+    /// @notice Copy the raw bytes of an ARBITRARY signature entry into memory.
+    /// @dev Halts for protocol-validated schemes. Priced like CALLDATACOPY.
+    function sigDataCopy(uint256 memoryOffset, uint256 dataOffset, uint256 length, uint256 signatureIndex)
+        internal
+        pure
+    {
+        assembly {
+            sigdatacopy(memoryOffset, dataOffset, length, signatureIndex)
         }
     }
 
@@ -265,8 +277,20 @@ library FrameTxLib {
         return sigParam(SIG_PARAM_MSG, signatureIndex);
     }
 
+    /// @dev ARBITRARY entries only.
     function signatureLength(uint256 signatureIndex) internal pure returns (uint256) {
         return uint256(sigParam(SIG_PARAM_SIGNATURE_LENGTH, signatureIndex));
+    }
+
+    /// @notice Raw bytes of an ARBITRARY signature entry.
+    function signatureData(uint256 signatureIndex) internal pure returns (bytes memory result) {
+        uint256 size = signatureLength(signatureIndex);
+        result = new bytes(size);
+        uint256 memoryOffset;
+        assembly {
+            memoryOffset := add(result, 0x20)
+        }
+        sigDataCopy(memoryOffset, 0, size, signatureIndex);
     }
 
     /// @notice Encode the expiry verifier deadline as canonical 8-byte big-endian data.

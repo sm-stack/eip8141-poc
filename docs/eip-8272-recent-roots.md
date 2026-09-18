@@ -48,7 +48,7 @@ Therefore a root written in slot `S` can first be referenced in `S+1`. Same-slot
 | `RECENTROOTREFLOAD(1, index)` | zero-extended slot |
 | `RECENTROOTREFLOAD(2, index)` | root |
 
-`RECENTROOTREFLOAD` is opcode `0xB5`, costs 3 gas, and halts on an out-of-range index or field. `0xB4` remains assigned to `SIGPARAM`.
+`RECENTROOTREFLOAD` is opcode `0xB6`, costs 3 gas, and halts on an out-of-range index or field. `0xB4` and `0xB5` are assigned to EIP-8141's `SIGPARAM` and `SIGDATACOPY`. The opcode is local to this proof of concept: the current EIP-8272 draft exposes recent roots through a canonical `VERIFY` frame and defines no opcode.
 
 ## Intrinsic Gas
 

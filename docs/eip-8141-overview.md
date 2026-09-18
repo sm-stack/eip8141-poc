@@ -66,7 +66,9 @@ Supported schemes are ARBITRARY (`0`), secp256k1 (`1`), and P256 (`2`). The prot
 - Empty `msg` means the signature verifies the canonical transaction signature hash.
 - A non-empty `msg` must be exactly 32 bytes and cannot be all zero.
 
-The signature hash is `keccak256(typed_transaction)` over the same nine-field layout as the wire format, with only the raw signature bytes of empty-message signatures replaced by empty bytes. Frame data is not elided. `SIGPARAM` exposes protocol-signature metadata and can copy raw bytes only from ARBITRARY entries.
+The signature hash is `keccak256(typed_transaction)` over the same nine-field layout as the wire format, with only the raw signature bytes of empty-message signatures replaced by empty bytes. Frame data is not elided. `SIGPARAM` exposes signature metadata. `SIGDATACOPY` copies raw signature bytes, and only from ARBITRARY entries: the bytes and length of a protocol-validated signature are not introspectable, which keeps them eligible for later aggregation.
+
+The two message forms serve different witnesses. A bespoke scheme that signs the transaction itself (for example the C13 hash-based account) places its witness in an ARBITRARY entry with an empty `msg`: the entry's bytes are elided from the signature hash, so the witness can sign that hash without circularity. A scheme whose signed message is fixed by an outside protocol (for example WebAuthn, which signs `sha256(authenticatorData || sha256(clientDataJSON))`) uses a protocol-validated entry with an explicit `msg`. Such an entry's bytes stay inside the signature hash, so the account binds the ceremony's challenge to an envelope hash of the transaction fields instead.
 
 ## Introspection Opcodes
 
@@ -76,8 +78,9 @@ The signature hash is `keccak256(typed_transaction)` over the same nine-field la
 | `0xB1` | FRAMEDATALOAD | Load 32 bytes from a frame's data |
 | `0xB2` | FRAMEDATACOPY | Copy bytes from a frame's data |
 | `0xB3` | FRAMEPARAM | Read frame metadata and earlier status |
-| `0xB4` | SIGPARAM | Read signature signer, scheme, message, or length |
-| `0xB5` | RECENTROOTREFLOAD | Read source ID, slot, or root from a verified reference |
+| `0xB4` | SIGPARAM | Read signature signer, scheme, message, or (ARBITRARY only) length |
+| `0xB5` | SIGDATACOPY | Copy raw bytes of an ARBITRARY signature entry |
+| `0xB6` | RECENTROOTREFLOAD | Read source ID, slot, or root from a verified reference |
 | `0xAA` | APPROVE | Terminate VERIFY execution and approve a scope |
 
 FRAMEPARAM status is available only for earlier frames and returns `0` for failure, `1` for success, and `2` for skipped execution.
