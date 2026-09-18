@@ -7,7 +7,9 @@ DEVNET_HTTP_PORT="$(node -p 'new URL(process.argv[1]).port || "80"' "$RPC_URL")"
 # Exercise the public validation budgets for this pool, even though the
 # shared benchmark devnet uses larger defaults for other account examples.
 export FRAMEPOOL_MAX_VERIFY_GAS="${FRAMEPOOL_MAX_VERIFY_GAS:-100000}"
-export FRAMEPOOL_MAX_REVALIDATION_GAS="${FRAMEPOOL_MAX_REVALIDATION_GAS:-48100}"
+# No cryptography runs inside the VERIFY frame, so there is no native memo
+# credit: the revalidation bound equals the declared keyed VERIFY gas.
+export FRAMEPOOL_MAX_REVALIDATION_GAS="${FRAMEPOOL_MAX_REVALIDATION_GAS:-45000}"
 export FRAMEPOOL_MAX_STATE_DEPENDENT_VERIFY_GAS="${FRAMEPOOL_MAX_STATE_DEPENDENT_VERIFY_GAS:-100000}"
 export FRAMEPOOL_MAX_VERIFY_STATE_GAS="${FRAMEPOOL_MAX_VERIFY_STATE_GAS:-500000}"
 DEVNET_PID=""

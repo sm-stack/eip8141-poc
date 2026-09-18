@@ -23,6 +23,17 @@ contract AssertionHarness {
         );
     }
 
+    function digest(bytes32 challenge, StrictWebAuthn.Assertion calldata a) external view returns (bool, bytes32) {
+        return StrictWebAuthn.assertionDigest(
+            challenge,
+            sha256("wallet.example.com"),
+            keccak256("\",\"origin\":\"https://wallet.example.com\",\"crossOrigin\":false}"),
+            keccak256("\",\"origin\":\"https://wallet.example.com\"}"),
+            a.authenticatorData,
+            a.clientDataJSON
+        );
+    }
+
     function validKey(uint256 x, uint256 y) external pure returns (bool) {
         return StrictWebAuthn.validPublicKey(x, y);
     }
@@ -203,7 +214,25 @@ contract PasskeyAccount8141Test is TestBase {
         wallet.cancelRecovery();
         StrictWebAuthn.Assertion memory a = _auth(CHALLENGE);
         vm.expectRevert(PasskeyAccount8141.Unauthorized.selector);
-        wallet.validate(x, y, 0, 1 ether, a);
+        wallet.validate(0, 1 ether, a.authenticatorData, a.clientDataJSON);
+    }
+
+    function test_commitmentUsesProtocolSignerAddress() public {
+        address signer = address(uint160(uint256(keccak256(abi.encodePacked(x, y)))));
+        assertEq(wallet.signerAddress(x, y), signer);
+        assertEq(wallet.keyCommitment(x, y, 0), keccak256(abi.encode(wallet.OWNER_DOMAIN(), signer, uint64(0))));
+        assertEq(wallet.ownerCommitment(), wallet.keyCommitment(x, y, 0));
+        assertTrue(wallet.keyCommitment(x, y, 0) != wallet.keyCommitment(x, y, 1));
+    }
+
+    function test_assertionDigestMatchesSignedMessage() public {
+        StrictWebAuthn.Assertion memory a = _auth(CHALLENGE);
+        (bool ok, bytes32 digest) = verifier.digest(CHALLENGE, a);
+        assertTrue(ok);
+        assertEq(digest, sha256(abi.encodePacked(a.authenticatorData, sha256(a.clientDataJSON))));
+        (ok, digest) = verifier.digest(bytes32(uint256(CHALLENGE) ^ 1), a);
+        assertFalse(ok);
+        assertEq(digest, bytes32(0));
     }
 
     function test_delayedRecoveryAndExactKey() public {

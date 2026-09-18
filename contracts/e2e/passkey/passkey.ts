@@ -29,23 +29,24 @@ async function main(){
         if (label === 'WebAuthn transfer') {
             const trace: any = await publicClient.request({method:'debug_traceTransaction',params:[hash,{disableStorage:true}]} as any);
             const logs = trace.structLogs.slice(0, trace.structLogs.findIndex((l:any)=>l.op==='APPROVE')+1);
-            const firstRead=logs.findIndex((l:any)=>l.op==='SLOAD');
+            // The curve signature is a protocol-validated signature entry: the
+            // VERIFY frame never calls P256VERIFY and reads storage exactly once.
             const p256=logs.findIndex((l:any)=>l.op==='STATICCALL' && BigInt(l.stack.at(-2).startsWith('0x') ? l.stack.at(-2) : `0x${l.stack.at(-2)}`)===256n);
-            assert.ok(p256 >= 0 && firstRead > p256, 'P256 before first mutable read');
+            assert.equal(p256,-1,'no in-frame P256VERIFY');
             assert.equal(logs.filter((l:any)=>l.op==='SLOAD').length,1);
-            report.trace={p256BeforeFirstSload:true,storageReads:1};
+            report.trace={inFrameP256Verify:false,storageReads:1};
             writeFileSync('../.context/passkey/verify-trace.json',JSON.stringify(trace));
         }
         assert.equal(receipt.frameReceipts[0].status,'0x1');
         assert.equal(receipt.frameReceipts[1].status,success?'0x1':'0x0');
         assert.equal(receipt.payer.toLowerCase(),account.toLowerCase());
         const gas=BigInt(receipt.frameReceipts[0].gasUsed.execution);
-        report.runs.push({label,declaredVerifyGas:tx.frames[0].gasLimit.toString(),revalidationBudget:(tx.frames[0].gasLimit-6900n).toString(),verifyExecutionGas:gas.toString(),hash});console.log(`PASS ${label}: VERIFY=${gas}`);
+        report.runs.push({label,declaredVerifyGas:tx.frames[0].gasLimit.toString(),protocolSignatureGas:'6700',nativeCredit:'0',revalidationBudget:tx.frames[0].gasLimit.toString(),verifyExecutionGas:gas.toString(),hash});console.log(`PASS ${label}: VERIFY=${gas}`);
         return hash;
     };
     const reject=async(tx:TransactionSerializableFrame,label:string)=>{
         const raw=serializeFrameTransaction(tx);
-        await assert.rejects(()=>publicClient.request({method:'eth_sendRawTransaction',params:[raw]}),/validation|revert|verify|nonce|already known/i,label);
+        await assert.rejects(()=>publicClient.request({method:'eth_sendRawTransaction',params:[raw]}),/validation|revert|verify|nonce|already known|invalid signature/i,label);
         report.rejections.push(label);
     };
     const pay=encodeFunctionData({abi:accountAbi,functionName:'execute',args:[recipient,parseEther('0.001'),'0x']});
@@ -56,6 +57,22 @@ async function main(){
     await reject(signed(tx,key,1n),'wrong key epoch');
     const a=makeAssertion(assertionChallenge(tx,0n),key.privateKey);
     await reject(attachAssertion(tx,key,0n,{...a,r:0n}),'invalid curve signature');
+    // Protocol-level signature entry rules.
+    const N=0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+    const entry=valid.signatures[0], word=(v:bigint)=>v.toString(16).padStart(64,'0');
+    const withEntry=(e:typeof entry[])=>({...valid,signatures:e});
+    const highS=`${entry.signature.slice(0,66)}${word(N-BigInt(`0x${entry.signature.slice(66,130)}`))}${entry.signature.slice(130)}` as Hex;
+    await reject(withEntry([{...entry,signature:highS}]),'high-S protocol signature');
+    await reject(withEntry([{...entry,msg:`0x${'11'.repeat(32)}` as Hex}]),'explicit message not signed');
+    await reject(withEntry([{...entry,signer:devAddr}]),'signer is not the key address');
+    await reject(withEntry([]),'missing signature entry');
+    await reject(withEntry([entry,entry]),'duplicate signature entry');
+    await reject(withEntry([{scheme:0,signer:'0x0000000000000000000000000000000000000000',msg:'0x',signature:entry.signature}]),'ARBITRARY entry instead of P256');
+    // A different, validly signed ceremony does not authorize this envelope.
+    const other=attachAssertion(tx,key,0n,makeAssertion(assertionChallenge({...tx,nonceSeq:tx.nonceSeq+7n},0n),key.privateKey));
+    await reject(other,'ceremony for another envelope');
+    // Ceremony data swapped under a valid entry: digest no longer matches msg.
+    await reject({...valid,frames:[other.frames[0],valid.frames[1]]},'ceremony data does not match signed digest');
     const changes=[{...valid,nonceSeq:valid.nonceSeq+1n},{...valid,nonceKeys:[123n]},
         {...valid,maxFeePerGas:valid.maxFeePerGas!+1n},
         {...valid,frames:[valid.frames[0],{...valid.frames[1],data:encodeFunctionData({abi:accountAbi,functionName:'execute',args:[devAddr,1n,'0x']})}]},
@@ -99,6 +116,7 @@ async function main(){
     const largeData = encodeFunctionData({abi:accountAbi,functionName:'execute',args:[recipient,0n,`0x${'ff'.repeat(16224)}`]});
     assert.ok((largeData.length-2)/2 <= 16384);
     await send(signed(await unsigned(largeData),key,2n),'near-limit execution calldata');
+    await send(signed(await unsigned(largeData,456n,0n),key,2n),'near-limit calldata and first keyed nonce');
     report.maxGasCharge=MAX_GAS_CHARGE.toString();report.account=account;
     writeFileSync('../.context/passkey/e2e-report.json',JSON.stringify(report,null,2));
     console.log(`PASS ${report.rejections.length} rejections, key rotation, delayed recovery and replay protection`);

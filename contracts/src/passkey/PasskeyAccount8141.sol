@@ -7,7 +7,7 @@ import {StrictWebAuthn} from "./StrictWebAuthn.sol";
 /// @notice Self-paying WebAuthn account with one rotatable owner and optional
 /// immutable delayed recovery authority. Deploy directly; not proxy compatible.
 contract PasskeyAccount8141 {
-    bytes32 public constant OWNER_DOMAIN = keccak256("8141.passkey.owner.v1");
+    bytes32 public constant OWNER_DOMAIN = keccak256("8141.passkey.owner.v2");
     bytes32 public constant CHALLENGE_DOMAIN = keccak256("8141.passkey.transaction.v1");
     bytes32 public immutable rpIdHash;
     bytes32 public immutable suffixHash;
@@ -69,32 +69,49 @@ contract PasskeyAccount8141 {
 
     receive() external payable {}
 
+    /// @notice Address EIP-8141 assigns to a P-256 key: `keccak256(qx || qy)[12:]`.
+    function signerAddress(uint256 x, uint256 y) public pure returns (address) {
+        return address(uint160(uint256(keccak256(abi.encodePacked(x, y)))));
+    }
+
     function keyCommitment(uint256 x, uint256 y, uint64 epoch) public pure returns (bytes32) {
-        return keccak256(abi.encode(OWNER_DOMAIN, x, y, epoch));
+        return _signerCommitment(signerAddress(x, y), epoch);
+    }
+
+    function _signerCommitment(address signer, uint64 epoch) private pure returns (bytes32) {
+        return keccak256(abi.encode(OWNER_DOMAIN, signer, epoch));
     }
 
     function challenge(bytes32 envelopeHash, uint64 epoch, uint256 maxGasCharge) public view returns (bytes32) {
         return keccak256(abi.encode(CHALLENGE_DOMAIN, block.chainid, address(this), envelopeHash, epoch, maxGasCharge));
     }
 
+    /// @dev The P-256 signature is the transaction's single protocol-validated
+    ///      `P256` signature entry. The protocol verified it, before any frame
+    ///      ran, over the entry's explicit `msg`; this frame checks that `msg`
+    ///      is the WebAuthn digest of a ceremony whose challenge commits to this
+    ///      transaction, and that the entry's signer is the current owner.
     function validate(
-        uint256 x,
-        uint256 y,
         uint64 epoch,
         uint256 maxGasCharge,
-        StrictWebAuthn.Assertion calldata assertion
+        bytes calldata authenticatorData,
+        bytes calldata clientDataJSON
     ) external view {
         if (msg.sender != address(0xAA)) revert Unauthorized();
-        // One VERIFY authorizes one self-targeted SENDER call. This fork's
-        // sigHash includes VERIFY calldata, so use an explicit envelope hash
-        // to avoid signing a message containing its own WebAuthn assertion.
+        // One VERIFY authorizes one self-targeted SENDER call. WebAuthn signs
+        // sha256(authenticatorData || sha256(clientDataJSON)), never the
+        // transaction hash itself, so the entry carries an explicit `msg`. An
+        // explicit-message entry keeps its bytes inside the canonical signature
+        // hash; the challenge therefore commits to an envelope hash over every
+        // fee- and execution-relevant field instead.
         if (
             FrameTxLib.txSender() != address(this) || FrameTxLib.frameCount() != 2
                 || FrameTxLib.currentFrameIndex() != 0 || FrameTxLib.frameMode(0) != 1
                 || FrameTxLib.frameTarget(0) != address(this) || FrameTxLib.frameFlags(0) != 3
                 || FrameTxLib.frameValue(0) != 0 || FrameTxLib.frameMode(1) != 2
                 || FrameTxLib.frameTarget(1) != address(this) || FrameTxLib.frameFlags(1) != 0
-                || FrameTxLib.frameValue(1) != 0 || FrameTxLib.signatureCount() != 0
+                || FrameTxLib.frameValue(1) != 0 || FrameTxLib.signatureCount() != 1
+                || FrameTxLib.signatureScheme(0) != FrameTxLib.SIGNATURE_SCHEME_P256
                 || FrameTxLib.recentRootReferenceCount() != 0 || FrameTxLib.nonceKeyCount() != 1
                 || uint256(FrameTxLib.txParam(FrameTxLib.TX_PARAM_BLOB_HASH_COUNT)) != 0
                 || uint256(FrameTxLib.txParam(FrameTxLib.TX_PARAM_BLOB_FEE_CAP)) != 0
@@ -103,9 +120,10 @@ contract PasskeyAccount8141 {
             maxGasCharge == 0 || FrameTxLib.maxCost() > maxGasCharge || FrameTxLib.frameDataSize(1) > 16_384
                 || msg.data.length > 1024
         ) revert InvalidEnvelope();
-        if (keccak256(msg.data) != keccak256(abi.encodeCall(this.validate, (x, y, epoch, maxGasCharge, assertion)))) {
-            revert InvalidEnvelope();
-        }
+        if (
+            keccak256(msg.data)
+                != keccak256(abi.encodeCall(this.validate, (epoch, maxGasCharge, authenticatorData, clientDataJSON)))
+        ) revert InvalidEnvelope();
         bytes32 hash = keccak256(
             abi.encode(
                 FrameTxLib.nonceKeysHash(),
@@ -119,11 +137,13 @@ contract PasskeyAccount8141 {
                 keccak256(FrameTxLib.frameData(1))
             )
         );
-        if (!StrictWebAuthn.verify(
-                challenge(hash, epoch, maxGasCharge), rpIdHash, suffixHash, legacySuffixHash, assertion, x, y
-            )) revert InvalidAssertion();
-        // First mutable read: P256VERIFY above is eligible for native memo.
-        if (keyCommitment(x, y, epoch) != ownerCommitment) revert InvalidKey();
+        (bool ok, bytes32 digest) = StrictWebAuthn.assertionDigest(
+            challenge(hash, epoch, maxGasCharge), rpIdHash, suffixHash, legacySuffixHash, authenticatorData, clientDataJSON
+        );
+        // A canonical-hash entry reports a zero message and never matches.
+        if (!ok || digest == 0 || FrameTxLib.signatureMessage(0) != digest) revert InvalidAssertion();
+        // Only mutable read. No cryptography runs inside this frame.
+        if (_signerCommitment(FrameTxLib.signatureSigner(0), epoch) != ownerCommitment) revert InvalidKey();
         FrameTxLib.approveEmpty(FrameTxLib.SCOPE_EXECUTION_AND_PAYMENT);
     }
 

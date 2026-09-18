@@ -1,12 +1,16 @@
-import { encodeAbiParameters, encodeFunctionData, keccak256, parseAbi, parseAbiParameters, bytesToHex, hexToBytes, type Address, type Hex } from 'viem';
+import { concatHex, encodeAbiParameters, encodeFunctionData, getAddress, keccak256, numberToHex, parseAbi, parseAbiParameters, sha256, bytesToHex, hexToBytes, type Address, type Hex } from 'viem';
 import { type TransactionSerializableFrame } from 'viem/eip8141';
 
 export const MAX_GAS_CHARGE = 10_000_000_000_000_000n; // Explicit signed ceiling: 0.01 ETH.
-export const VERIFY_GAS = 35_000n;
-export const KEYED_VERIFY_GAS = 55_000n; // Includes first-use keyed nonce surcharge.
+// The curve signature is a protocol-validated signature entry (6,700 signature
+// gas, outside the frame), so VERIFY only checks the ceremony and the owner.
+export const VERIFY_GAS = 25_000n;
+export const KEYED_VERIFY_GAS = 45_000n; // Includes first-use keyed nonce surcharge.
 export const accountAbi = parseAbi([
     'constructor(uint256 x,uint256 y,bytes32 rpHash,string origin,address recoveryGuardian,uint256 delay)',
-    'function validate(uint256 x,uint256 y,uint64 epoch,uint256 maxGasCharge,(bytes authenticatorData,bytes clientDataJSON,uint256 r,uint256 s) assertion) view',
+    'function validate(uint64 epoch,uint256 maxGasCharge,bytes authenticatorData,bytes clientDataJSON) view',
+    'function signerAddress(uint256 x,uint256 y) pure returns (address)',
+    'function keyCommitment(uint256 x,uint256 y,uint64 epoch) pure returns (bytes32)',
     'function execute(address target,uint256 value,bytes data) returns (bytes)',
     'function executeBatch((address target,uint256 value,bytes data)[] calls)',
     'function rotateOwner(uint256 x,uint256 y)',
@@ -42,11 +46,14 @@ export function assertionChallenge(tx: TransactionSerializableFrame, epoch: bigi
     if (tx.frames.length !== 2 || tx.frames[0].mode !== 'verify' || tx.frames[0].flags !== 3
         || tx.frames[1].mode !== 'sender' || (tx.frames[1].flags ?? 0) !== 0
         || tx.frames.some(f => (f.target !== null && f.target.toLowerCase() !== tx.sender.toLowerCase()) || (f.value ?? 0n) !== 0n)
-        || tx.signatures.length !== 0 || tx.recentRootReferences.length !== 0 || (tx.blobVersionedHashes?.length ?? 0) !== 0
+        || tx.signatures.length > 1 || tx.signatures.some(sig => sig.scheme !== 2) || tx.recentRootReferences.length !== 0 || (tx.blobVersionedHashes?.length ?? 0) !== 0
         || (tx.maxFeePerBlobGas ?? 0n) !== 0n || (tx.frames[1].data.length - 2) / 2 > 16384 || maxGasCharge <= 0n) throw new Error('Unsupported signing envelope');
     const keys = tx.nonceKeys ?? [0n];
     if (keys.length !== 1) throw new Error('Exactly one nonce key required');
     const keysHash = keccak256(encodeAbiParameters(parseAbiParameters('uint256,uint256'), [1n, keys[0]]));
+    // The signature entry carries an explicit message, so its bytes stay inside
+    // the canonical signature hash and cannot be what the passkey signs. The
+    // challenge commits to this envelope hash instead.
     const envelopeHash = keccak256(encodeAbiParameters(parseAbiParameters('bytes32,uint256,uint256,uint256,uint256,uint256,uint256,uint256,bytes32'),
         [keysHash, tx.nonceSeq ?? BigInt(tx.nonce!), tx.maxPriorityFeePerGas ?? 0n, tx.maxFeePerGas ?? 0n,
             tx.frames[0].gasLimit, tx.frames[0].stateGasLimit ?? 0n, tx.frames[1].gasLimit, tx.frames[1].stateGasLimit ?? 0n, keccak256(tx.frames[1].data)]));
@@ -64,9 +71,30 @@ export function buildTransaction(args: { chainId: number; sender: Address; nonce
         ] };
 }
 
+/** Address EIP-8141 assigns to a P-256 key: `keccak256(qx || qy)[12:]`. */
+export function signerAddress(key: Pick<Credential, 'x' | 'y'>): Address {
+    return getAddress(`0x${keccak256(concatHex([numberToHex(key.x, { size: 32 }), numberToHex(key.y, { size: 32 })])).slice(26)}`);
+}
+
+/** Digest a WebAuthn authenticator signs: `sha256(authenticatorData || sha256(clientDataJSON))`. */
+export function assertionDigest(assertion: Pick<Assertion, 'authenticatorData' | 'clientDataJSON'>): Hex {
+    return sha256(concatHex([assertion.authenticatorData, sha256(assertion.clientDataJSON)]));
+}
+
+/**
+ * Attach a WebAuthn assertion as the transaction's protocol-validated P-256
+ * signature entry. The entry signs an explicit message (the WebAuthn digest),
+ * so the protocol verifies the curve signature before any frame runs and the
+ * VERIFY frame only carries the ceremony data. The protocol scheme accepts
+ * low-S signatures only; authenticators may emit either form, so normalize.
+ */
 export function attachAssertion<T extends TransactionSerializableFrame>(tx: T, key: Pick<Credential, 'x' | 'y'>, epoch: bigint, assertion: Assertion, maxGasCharge = MAX_GAS_CHARGE): T {
-    const data = encodeFunctionData({ abi: accountAbi, functionName: 'validate', args: [key.x, key.y, epoch, maxGasCharge, assertion] });
-    return { ...tx, frames: [{ ...tx.frames[0], data }, ...tx.frames.slice(1)] };
+    if (tx.signatures.length !== 0) throw new Error('Unsupported signing envelope');
+    const s = assertion.s > N / 2n ? N - assertion.s : assertion.s;
+    const data = encodeFunctionData({ abi: accountAbi, functionName: 'validate', args: [epoch, maxGasCharge, assertion.authenticatorData, assertion.clientDataJSON] });
+    const signature = concatHex([assertion.r, s, key.x, key.y].map(v => numberToHex(v, { size: 32 })));
+    return { ...tx, signatures: [{ scheme: 2 as const, signer: signerAddress(key), msg: assertionDigest(assertion), signature }],
+        frames: [{ ...tx.frames[0], data }, ...tx.frames.slice(1)] };
 }
 
 export function parseDerSignature(input: Uint8Array): { r: bigint; s: bigint } {

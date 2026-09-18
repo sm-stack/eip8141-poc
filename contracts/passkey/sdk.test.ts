@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sign, verify } from 'node:crypto';
-import { bytesToHex, hexToBytes } from 'viem';
-import { parseDerSignature, parseSpki, parseAssertion, validatePolicy, assertionChallenge, buildTransaction, attachAssertion } from './sdk.js';
+import { createHash, sign, verify } from 'node:crypto';
+import { decodeFunctionData, hexToBytes, keccak256 } from 'viem';
+import { serializeFrameTransaction, parseTransaction, type TransactionSerializableFrame } from 'viem/eip8141';
+import { parseDerSignature, parseSpki, parseAssertion, validatePolicy, assertionChallenge, assertionDigest, signerAddress, buildTransaction, attachAssertion, accountAbi } from './sdk.js';
 import { makeKey, makeAssertion, RP, ORIGIN } from './test-helpers.js';
 const key=makeKey();
 const tx=buildTransaction({chainId:1337,sender:'0x0000000000000000000000000000000000001234',nonceSeq:0n,executionData:'0x1234',maxFeePerGas:10n,maxPriorityFeePerGas:1n});
@@ -45,4 +46,35 @@ test('assertion adapter accepts supported JSON and rejects duplicate challenge a
     response.clientDataJSON=hexToBytes(a.clientDataJSON).buffer as ArrayBuffer;
     const auth=hexToBytes(a.authenticatorData); auth[32]=1;response.authenticatorData=auth.buffer as ArrayBuffer;
     assert.throws(()=>parseAssertion(response,h,credential));
+});
+test('assertion becomes a protocol-validated low-S P256 signature entry over the WebAuthn digest',()=>{
+    const N=0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+    const h=assertionChallenge(tx,0n), word=(v:bigint)=>v.toString(16).padStart(64,'0');
+    const expectedSigner=`0x${keccak256(`0x${word(key.x)}${word(key.y)}`).slice(26)}`;
+    assert.equal(signerAddress(key).toLowerCase(),expectedSigner);
+    for(let i=0;i<16;i++){
+        const a=makeAssertion(h,key.privateKey);
+        // Exercise both forms an authenticator may emit.
+        const high=a.s>N/2n?a:{...a,s:N-a.s};
+        for(const assertion of [a,high]){
+            const signed=attachAssertion(tx,key,0n,assertion);
+            assert.equal(signed.signatures.length,1);
+            const entry=signed.signatures[0];
+            assert.equal(entry.scheme,2);assert.equal(entry.signer.toLowerCase(),expectedSigner);
+            const raw=Buffer.concat([Buffer.from(assertion.authenticatorData.slice(2),'hex'),createHash('sha256').update(Buffer.from(assertion.clientDataJSON.slice(2),'hex')).digest()]);
+            assert.equal(entry.msg,`0x${createHash('sha256').update(raw).digest('hex')}`);assert.equal(entry.msg,assertionDigest(assertion));
+            assert.equal((entry.signature.length-2)/2,128);
+            const sWord=BigInt(`0x${entry.signature.slice(66,130)}`);
+            assert.ok(sWord>0n&&sWord<=N/2n,'low-S');
+            assert.equal(entry.signature.slice(130),`${word(key.x)}${word(key.y)}`);
+            assert.ok(verify('sha256',raw,{key:key.publicKey,dsaEncoding:'ieee-p1363'},Buffer.from(entry.signature.slice(2,130),'hex')));
+            // VERIFY calldata carries only the ceremony; no key or curve signature.
+            const decoded=decodeFunctionData({abi:accountAbi,data:signed.frames[0].data});
+            assert.equal(decoded.functionName,'validate');
+            assert.deepEqual(decoded.args,[0n,10_000_000_000_000_000n,assertion.authenticatorData,assertion.clientDataJSON]);
+            const roundTrip=parseTransaction(serializeFrameTransaction(signed)) as TransactionSerializableFrame;
+            assert.equal(roundTrip.signatures[0].msg,entry.msg);assert.equal(roundTrip.signatures[0].signature,entry.signature);
+        }
+    }
+    assert.throws(()=>attachAssertion(attachAssertion(tx,key,0n,makeAssertion(h,key.privateKey)),key,0n,makeAssertion(h,key.privateKey)));
 });
