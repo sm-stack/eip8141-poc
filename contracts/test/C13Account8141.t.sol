@@ -87,14 +87,15 @@ contract C13Account8141Test is TestBase {
         vm.expectRevert(C13Account8141.Unauthorized.selector);
         wallet.execute(address(0xbeef), 0, "");
         vm.expectRevert(C13Account8141.Unauthorized.selector);
-        wallet.validate(seed, root, 0, 1, sig);
+        wallet.validate(seed, root, 0);
         bytes32 before = wallet.ownerCommitment();
-        bytes32 c = wallet.challenge(M, 0, 1);
         vm.prank(address(wallet));
         wallet.rotateOwner(seed, root);
         assertEq(wallet.ownerEpoch(), 1);
         assertTrue(wallet.ownerCommitment() != before);
-        assertTrue(wallet.challenge(M, 1, 1) != c);
+        // The epoch is bound through the key commitment and, on the wire,
+        // through VERIFY calldata covered by the canonical signature hash.
+        assertTrue(wallet.keyCommitment(seed, root, 0) != wallet.keyCommitment(seed, root, 1));
     }
 
     function test_rejectsNoncanonicalKeys() public {
@@ -108,9 +109,11 @@ contract C13Account8141Test is TestBase {
     }
 
     function test_domainSeparation() public {
-        C13Account8141 other = new C13Account8141(seed, root);
-        assertTrue(other.challenge(M, 0, 1) != wallet.challenge(M, 0, 1));
-        assertTrue(wallet.challenge(M, 0, 1) != wallet.challenge(M, 0, 2));
+        // The account and chain are committed by the signature hash itself;
+        // the challenge only adds a scheme-specific domain tag.
+        assertEq(wallet.challenge(M), keccak256(abi.encode(wallet.CHALLENGE_DOMAIN(), M)));
+        assertTrue(wallet.challenge(M) != M);
+        assertTrue(wallet.challenge(M) != wallet.challenge(bytes32(uint256(M) ^ 1)));
     }
 
     function test_batchAtomicityAndCallbackAuthorization() public {

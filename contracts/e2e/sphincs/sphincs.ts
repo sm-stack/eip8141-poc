@@ -15,11 +15,13 @@ async function main(){
  const {address:account}=await deployContract(walletClient,publicClient,`${(JSON.parse(readFileSync('out-sphincs/C13Account8141.sol/C13Account8141.json','utf8')).bytecode.object as Hex)}${ctor.slice(2)}` as Hex,8_000_000n,'C13Account8141');
  await fundAccount(walletClient,publicClient,account,'3');
  const recipient='0x000000000000000000000000000000000000ca13';
- const unsigned=async(data:Hex,nonceKey=0n,seq?:bigint)=>{
+ const unsigned=async(data:Hex,nonceKey=0n,seq?:bigint,k=key,epoch=0n)=>{
   const b=await publicClient.getBlock();
-  return buildTransaction({chainId:1337,sender:account,nonceKey,nonceSeq:seq??BigInt(await publicClient.getTransactionCount({address:account})),executionData:data,maxFeePerGas:(b.baseFeePerGas??1n)*2n+1n,maxPriorityFeePerGas:1n});
+  return buildTransaction({chainId:1337,sender:account,key:k,epoch,nonceKey,nonceSeq:seq??BigInt(await publicClient.getTransactionCount({address:account})),executionData:data,maxFeePerGas:(b.baseFeePerGas??1n)*2n+1n,maxPriorityFeePerGas:1n});
  };
- const signed=(tx:KeyedFrame,k=key,epoch=0n)=>attachSignature(tx,k,epoch,sign(signatureChallenge(tx,epoch),k));
+ // The C13 key signs the canonical signature hash; the witness is the single
+ // ARBITRARY signature entry, whose bytes that hash elides.
+ const signed=(tx:KeyedFrame,k=key)=>attachSignature(tx,sign(signatureChallenge(tx),k));
  const send=async(tx:KeyedFrame,label:string,success=true)=>{
   const hash=await publicClient.request({method:'eth_sendRawTransaction',params:[serializeFrameTransaction(tx)]});
   const receipt=await waitForReceipt(publicClient,hash);
@@ -39,23 +41,28 @@ async function main(){
  };
  const pay=encodeFunctionData({abi:accountAbi,functionName:'execute',args:[recipient,parseEther('0.001'),'0x']});
  const tx=await unsigned(pay),valid=signed(tx);
- await reject(signed(tx,next),'valid signature from unregistered key');
- await reject(signed(tx,key,1n),'wrong epoch');
+ await reject(signed(await unsigned(pay,0n,undefined,next),next),'valid signature from unregistered key');
+ await reject(signed(await unsigned(pay,0n,undefined,key,1n)),'wrong epoch');
+ await reject(attachSignature(tx,sign(signatureChallenge(tx),next)),'registered key claimed, other key signed');
  const changes=[{...valid,nonceSeq:valid.nonceSeq+1n},{...valid,nonceKeys:[123n]},
   {...valid,maxFeePerGas:valid.maxFeePerGas!+1n},
   {...valid,frames:[valid.frames[0],{...valid.frames[1],data:'0xffffffff' as Hex}]},
-  {...valid,frames:[{...valid.frames[0],gasLimit:99998n},valid.frames[1]]},
+  {...valid,frames:[{...valid.frames[0],gasLimit:valid.frames[0].gasLimit-1n},valid.frames[1]]},
   {...valid,frames:[valid.frames[0],{...valid.frames[1],stateGasLimit:999999n}]},
   {...valid,frames:[valid.frames[0],{...valid.frames[1],mode:'default' as const}]},
   {...valid,frames:[{...valid.frames[0],data:`${valid.frames[0].data}00` as Hex},valid.frames[1]]}];
- for(let i=0;i<changes.length;i++)await reject(changes[i],`envelope mutation ${i}`);
- const mutateData=(byte:number,value:string)=>{const data=valid.frames[0].data;return {...valid,frames:[{...valid.frames[0],data:`${data.slice(0,2+byte*2)}${value}${data.slice(4+byte*2)}` as Hex},valid.frames[1]]};};
- await reject(mutateData(3907,'01'),'nonzero ABI padding');
- await reject(mutateData(163,'c0'),'noncanonical dynamic offset');
- await reject(mutateData(196,(parseInt(valid.frames[0].data.slice(394,396),16)^1).toString(16).padStart(2,'0')),'tampered signature R');
- await reject({...valid,frames:[{...valid.frames[0],data:valid.frames[0].data.slice(0,-64) as Hex},valid.frames[1]]},'truncated signature calldata');
-
- await reject(attachSignature(tx,key,0n,sign(signatureChallenge(tx,0n,1n),key),1n),'insufficient signed fee ceiling');
+ for(let i=0;i<changes.length;i++)await reject(changes[i],`signed field mutation ${i}`);
+ const witness=valid.signatures[0];
+ const withWitness=(w:typeof witness[])=>({...valid,signatures:w});
+ const flipped=`${witness.signature.slice(0,2)}${(parseInt(witness.signature.slice(2,4),16)^1).toString(16).padStart(2,'0')}${witness.signature.slice(4)}` as Hex;
+ await reject(withWitness([{...witness,signature:flipped}]),'tampered signature R');
+ await reject(withWitness([{...witness,signature:witness.signature.slice(0,-2) as Hex}]),'truncated witness');
+ await reject(withWitness([{...witness,signature:`${witness.signature}00` as Hex}]),'padded witness');
+ await reject(withWitness([]),'missing witness entry');
+ await reject(withWitness([witness,witness]),'duplicate witness entry');
+ // An explicit-message entry keeps its bytes inside the signature hash and
+ // therefore cannot sign this transaction.
+ await reject(withWitness([{...witness,msg:`0x${'11'.repeat(32)}` as Hex}]),'explicit-message witness');
  await send(valid,'C13 transfer');
  assert.equal(await publicClient.getBalance({address:recipient}),parseEther('0.001'));
  await reject(valid,'included replay');
@@ -68,11 +75,12 @@ async function main(){
  await send(signed(await unsigned(rotate)),'rotate owner');
  assert.equal(await publicClient.readContract({address:account,abi:accountAbi,functionName:'ownerEpoch'}),1n);
  const rotated=await unsigned(pay);
- await reject(signed(rotated,key,0n),'old epoch');await reject(signed(rotated,key,1n),'old key with new epoch');
- await send(signed(rotated,next,1n),'new owner');
+ await reject(signed(rotated),'old epoch');
+ await reject(signed(await unsigned(pay,0n,undefined,key,1n)),'old key with new epoch');
+ await send(signed(await unsigned(pay,0n,undefined,next,1n),next),'new owner');
  const large=encodeFunctionData({abi:accountAbi,functionName:'execute',args:[recipient,0n,`0x${'ff'.repeat(16224)}`]});
- await send(signed(await unsigned(large),next,1n),'near-limit calldata');
- await send(signed(await unsigned(large,456n,0n),next,1n),'near-limit calldata and first keyed nonce');
+ await send(signed(await unsigned(large,0n,undefined,next,1n),next),'near-limit calldata');
+ await send(signed(await unsigned(large,456n,0n,next,1n),next),'near-limit calldata and first keyed nonce');
  report.account=account;
  writeFileSync('../.context/sphincs/e2e-report.json',JSON.stringify(report,null,2));
  console.log(`PASS ${report.rejections.length} rejections`);
