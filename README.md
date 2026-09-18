@@ -201,6 +201,6 @@ Do not deploy or use any part of this codebase in production or with real funds.
 
 ### P-256 / WebAuthn account
 
-[Passkey account implementation and usage](contracts/passkey/README.md): a self-paying Solidity account with strict RP/origin/UV checks, owner rotation, optional delayed recovery and signature-first validation. Run `make passkey-test` or `RPC_URL=http://127.0.0.1:18546 make e2e-passkey`.
+[Passkey account implementation and usage](contracts/passkey/README.md): a self-paying Solidity account with strict RP/origin/UV checks, owner rotation and optional delayed recovery. The P-256 signature is a protocol-validated EIP-8141 signature entry with an explicit WebAuthn digest, so no cryptography runs inside the VERIFY frame. Run `make passkey-test` or `RPC_URL=http://127.0.0.1:18546 make e2e-passkey`.
 
-[C13 SPHINCS⁻ account](contracts/sphincs/README.md): a self-paying Solidity account with PQ-authorized owner rotation and a specialized verifier. The local geth E2E exercises a 99,999 revalidation gas cap without native cache credit. This is experimental, nonstandard cryptography. Run `make sphincs-test` or `RPC_URL=http://127.0.0.1:18546 make e2e-sphincs`.
+[C13 SPHINCS⁻ account](contracts/sphincs/README.md): a self-paying Solidity account with PQ-authorized owner rotation and a specialized verifier. The witness is an `ARBITRARY` signature entry read with `SIGDATACOPY`, and it signs the canonical signature hash. The local geth E2E exercises a 99,999 revalidation gas cap without native cache credit. This is experimental, nonstandard cryptography. Run `make sphincs-test` or `RPC_URL=http://127.0.0.1:18546 make e2e-sphincs`.
